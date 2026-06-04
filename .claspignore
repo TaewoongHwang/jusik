@@ -1,0 +1,21 @@
+# Exclude Node.js dependencies, tooling, and local backup
+**/node_modules/**
+node_modules/**
+backup/**
+**/backup/**
+backup_v9_core/**
+**/backup_v9_core/**
+.git/**
+**/.git/**
+run_test_and_deploy.js
+watch_and_test.js
+install_git_hooks.js
+syntax_checker.js
+test_merge_logic.js
+package.json
+package-lock.json
+.clasp.json
+.gitignore
+scratch/**
+**/scratch/**
+
