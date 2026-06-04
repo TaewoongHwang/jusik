@@ -95,11 +95,50 @@ function getKisAccessToken_() {
 }
 
 function getKisAccountConfig_() {
+  var service = PropertiesService.getScriptProperties();
+  var cano = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_CANO) || '';
+  var accountProductCode = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ACNT_PRDT_CD) || '01';
+  var isaCano = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_CANO) || '';
+  var isaProductCode = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_ACNT_PRDT_CD) || '';
+  
+  // 🚀 [자율 동기화 세이프 가드] 만약 Properties 에 ISA 정보가 비어있다면 settings 시트에서 즉시 자동 룩업 동기화
+  if (!isaCano || !isaProductCode) {
+    try {
+      var settingsRows = readObjects_(AM_CONFIG.SHEETS.SETTINGS) || [];
+      var sheetProps = {};
+      var hasUpdates = false;
+      
+      settingsRows.forEach(function(row) {
+        var key = String(row.key || '').trim();
+        var val = String(row.value !== undefined && row.value !== null ? row.value : '').trim();
+        if (key && val && val.indexOf('****') < 0) {
+          if (key === 'KIS_ISA_CANO' && !isaCano) {
+            isaCano = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+          if (key === 'KIS_ISA_ACNT_PRDT_CD' && !isaProductCode) {
+            isaProductCode = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+        }
+      });
+      
+      if (hasUpdates) {
+        service.setProperties(sheetProps, false);
+        logInfo_('properties_sync', 'Auto-synced ISA account config from Settings sheet', sheetProps);
+      }
+    } catch(syncErr) {
+      logWarn_('properties_sync', 'Auto-sync config failed', { error: syncErr.message });
+    }
+  }
+  
   return {
-    cano: getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_CANO, ''),
-    accountProductCode: getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_ACNT_PRDT_CD, '01'),
-    isaCano: getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_CANO, ''),
-    isaProductCode: getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_ACNT_PRDT_CD, '')
+    cano: cano,
+    accountProductCode: accountProductCode,
+    isaCano: isaCano,
+    isaProductCode: isaProductCode
   };
 }
 
