@@ -1011,7 +1011,8 @@ function doGet(e) {
       'updateQuantUniverseDatabase',
       'runQuantPortfolioRebalancing',
       'callGeminiStockAnalysis_',
-      'getQuantLabDataForWeb'
+      'getQuantLabDataForWeb',
+      'getLogsForDebug_'
     ];
     
     if (allowedFunctions.indexOf(funcName) < 0) {
@@ -2766,4 +2767,10 @@ function getWebAppUrl_() {
   } catch(e) {
     return '';
   }
+}
+
+function getLogsForDebug_() {
+  ensureAllSheets_();
+  var logs = readObjects_(AM_CONFIG.SHEETS.LOGS) || [];
+  return logs.slice(Math.max(0, logs.length - 40)).reverse();
 }

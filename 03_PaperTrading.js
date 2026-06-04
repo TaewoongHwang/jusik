@@ -283,9 +283,14 @@ function collectHoldingsCurrent(forceRefresh) {
       
       // 1-B. 🚀 [신설] 국내 KIS ISA 계좌 잔고 룩업 및 병합
       var targetIsaCano = account.isaCano || account.cano;
-      if (targetIsaCano && account.isaProductCode) {
+      var targetIsaProductCode = account.isaProductCode;
+      
+      // 🚀 [중복 조회 완전 차단] 일반계좌와 ISA계좌의 정보가 100% 동일하다면 중복 API 요청을 생략
+      var isSameAccount = (targetIsaCano === account.cano && targetIsaProductCode === account.accountProductCode);
+      
+      if (targetIsaCano && targetIsaProductCode && !isSameAccount) {
         try {
-          var isaResponse = fetchKisDomesticAccountBalance_(targetIsaCano, account.isaProductCode);
+          var isaResponse = fetchKisDomesticAccountBalance_(targetIsaCano, targetIsaProductCode);
           var normalizedIsa = normalizeKisAccountBalance_(isaResponse, 'kis_isa_balance');
           normalizedIsa.holdings.forEach(function(h) {
             // 중복 종목 처리 (위탁계좌와 ISA계좌에 동일 종목이 존재할 경우 가중평균 병합)
