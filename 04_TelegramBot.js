@@ -1441,23 +1441,34 @@ function getPortfolioDataForWeb(forceRefresh) {
           var yahooData = calculate50DayMomentumAndRSI_(sym);
           if (yahooData && yahooData.prices && yahooData.prices.length > 0) {
             var yPrices = yahooData.prices;
+            var yLen = yPrices.length;
             
-            // 7D: 마지막 7영업일 가격 데이터
-            var yHist7D = yPrices.length > 7 ? yPrices.slice(yPrices.length - 7) : yPrices.slice();
+            // 실시간 현재가(cur)와 야후 마지막 종가(yPrices[yLen-1]) 간의 비율을 구해 전체 배열에 곱해 스케일 정규화
+            var ratio = 1;
+            if (yLen > 0 && yPrices[yLen - 1] > 0) {
+              ratio = cur / yPrices[yLen - 1];
+            }
+            
+            var normalizedPrices = yPrices.map(function(p) {
+              return p * ratio;
+            });
+            
+            // 7D: 최근 7영업일 가격 데이터
+            var yHist7D = normalizedPrices.length > 7 ? normalizedPrices.slice(normalizedPrices.length - 7) : normalizedPrices.slice();
             if (yHist7D.length > 0) {
               yHist7D[yHist7D.length - 1] = cur;
             }
             hist = yHist7D;
             
-            // 1M: 마지막 30영업일 가격 데이터
-            var yHist1M = yPrices.length > 30 ? yPrices.slice(yPrices.length - 30) : yPrices.slice();
+            // 1M: 최근 30영업일 가격 데이터
+            var yHist1M = normalizedPrices.length > 30 ? normalizedPrices.slice(normalizedPrices.length - 30) : normalizedPrices.slice();
             if (yHist1M.length > 0) {
               yHist1M[yHist1M.length - 1] = cur;
             }
             hist1M = yHist1M;
             
-            // 1Y: 전체 데이터 (야후에서 3개월치 일봉을 가져옴)
-            var yHist1Y = yPrices.slice();
+            // 1Y: 전체 데이터 (1년치 일봉 데이터)
+            var yHist1Y = normalizedPrices.slice();
             if (yHist1Y.length > 0) {
               yHist1Y[yHist1Y.length - 1] = cur;
             }
