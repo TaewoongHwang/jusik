@@ -305,7 +305,7 @@ function collectHoldingsCurrent(forceRefresh) {
             });
             
             // ISA 계좌에 유효한 대표 상품코드 후보군
-            var candidates = ['03', '02', '06', '01'];
+            var candidates = ['03', '02', '05', '06', '04', '07', '08', '09', '22', '01'];
             var scanSuccess = false;
             
             for (var cIdx = 0; cIdx < candidates.length; cIdx++) {
