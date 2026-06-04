@@ -60,20 +60,24 @@ function runPaperTradingSimulation(dateValue) {
         // 탈출조건 1: 손절선 (무효화 가격 터치)
         if (invalidPrice > 0 && low <= invalidPrice) {
           exited = true;
-          exitPrice = invalidPrice;
-          reason = '손절 (무효화 가격 ' + formatNumber_(invalidPrice) + ' 이탈)';
+          var isOvr = /^[A-Za-z]/.test(symbol);
+          exitPrice = isOvr ? (invalidPrice * 0.999) : Math.round(invalidPrice * 0.999); // 0.1% 슬리피지 페널티 적용!
+          reason = '손절 (무효화 가격 ' + formatNumber_(invalidPrice) + ' 이탈, 슬리피지 0.1% 페널티 반영)';
         }
         // 탈출조건 2: 익절선 (목표 수익률 +10% 도달)
         else if (high >= entryPrice * 1.10) {
           exited = true;
-          exitPrice = Math.round(entryPrice * 1.10);
-          reason = '익절 (목표 수익률 +10% 달성)';
+          var rawExit = entryPrice * 1.10;
+          var isOvr = /^[A-Za-z]/.test(symbol);
+          exitPrice = isOvr ? (rawExit * 0.999) : Math.round(rawExit * 0.999); // 0.1% 슬리피지 페널티 적용!
+          reason = '익절 (목표 수익률 +10% 달성, 슬리피지 0.1% 페널티 반영)';
         }
         // 탈출조건 3: 시간제 청산 (5거래일 보유 제한 경과)
         else if (holdingDays >= 5) {
           exited = true;
-          exitPrice = close;
-          reason = '시간 제한 청산 (5거래일 경과)';
+          var isOvr = /^[A-Za-z]/.test(symbol);
+          exitPrice = isOvr ? (close * 0.999) : Math.round(close * 0.999); // 0.1% 슬리피지 페널티 적용!
+          reason = '시간 제한 청산 (5거래일 경과, 슬리피지 0.1% 페널티 반영)';
         }
         // 보유 유지 시 가격 업데이트 및 보유일 증가
         else {
@@ -96,8 +100,9 @@ function runPaperTradingSimulation(dateValue) {
         
         if (holdingDays >= 5) {
           exited = true;
-          exitPrice = currentPrice;
-          reason = '시간 제한 청산 (5거래일 경과 - KIS 실시간가)';
+          var isOvr = /^[A-Za-z]/.test(symbol);
+          exitPrice = isOvr ? (currentPrice * 0.999) : Math.round(currentPrice * 0.999); // 0.1% 슬리피지 페널티 적용!
+          reason = '시간 제한 청산 (5거래일 경과 - KIS 실시간가, 슬리피지 0.1% 페널티 반영)';
         } else {
           pos.holding_days = holdingDays + 1;
           pos.current_price = currentPrice;
@@ -116,7 +121,7 @@ function runPaperTradingSimulation(dateValue) {
           symbol: symbol,
           name: pos.name,
           action_type: 'SELL',
-          price: exitPrice,
+          price: isOvr ? parseFloat(exitPrice.toFixed(2)) : exitPrice,
           quantity: quantity,
           amount: Math.round(returnAmt),
           reason: reason,
@@ -149,14 +154,17 @@ function runPaperTradingSimulation(dateValue) {
       var entryPct = 0;
       var reason = '';
       
+      var isOvr = /^[A-Za-z]/.test(symbol);
       if (isFirstHit && plan.first_entry_price > 0) {
-        entryPrice = Number(plan.first_entry_price);
+        var rawPrice = Number(plan.first_entry_price);
+        entryPrice = isOvr ? (rawPrice * 1.001) : Math.round(rawPrice * 1.001); // 0.1% 슬리피지 매수 페널티 반영!
         entryPct = Number(plan.first_entry_pct || 10);
-        reason = '1차 검토가 체결';
+        reason = '1차 검토가 체결 (슬리피지 0.1% 페널티 반영)';
       } else if (isBreakoutHit && plan.breakout_price > 0) {
-        entryPrice = Number(plan.breakout_price);
+        var rawPrice = Number(plan.breakout_price);
+        entryPrice = isOvr ? (rawPrice * 1.001) : Math.round(rawPrice * 1.001); // 0.1% 슬리피지 매수 페널티 반영!
         entryPct = Number(plan.breakout_entry_pct || 10);
-        reason = '돌파 조건 체결';
+        reason = '돌파 조건 체결 (슬리피지 0.1% 페널티 반영)';
       }
       
       if (entryPrice > 0 && entryPct > 0) {
@@ -175,7 +183,7 @@ function runPaperTradingSimulation(dateValue) {
             symbol: symbol,
             name: row.name,
             quantity: quantity,
-            entry_price: entryPrice,
+            entry_price: isOvr ? parseFloat(entryPrice.toFixed(2)) : entryPrice,
             current_price: nextClose,
             entry_date: target,
             holding_days: 1,
@@ -190,7 +198,7 @@ function runPaperTradingSimulation(dateValue) {
             symbol: symbol,
             name: row.name,
             action_type: 'BUY',
-            price: entryPrice,
+            price: isOvr ? parseFloat(entryPrice.toFixed(2)) : entryPrice,
             quantity: quantity,
             amount: Math.round(purchaseAmt),
             reason: reason,
@@ -205,11 +213,12 @@ function runPaperTradingSimulation(dateValue) {
       appendObjectRow_(AM_CONFIG.SHEETS.PAPER_LEDGER, tx);
       
       var isBuy = String(tx.action_type).toUpperCase() === 'BUY';
-      var title = isBuy ? '🔵 <b>가상 매수 체결</b>' : '🔴 <b>가상 매도 청산</b>';
+      var title = isBuy ? '🔵 <b>가상 매수 체결 (슬리피지 적용)</b>' : '🔴 <b>가상 매도 청산 (슬리피지 적용)</b>';
+      var priceUnit = /^[A-Za-z]/.test(tx.symbol) ? '$' : '원';
       var msg = [
         title,
         '종목명: ' + tx.name + ' (' + normalizeStockSymbol_(tx.symbol) + ')',
-        '체결가: ' + formatNumber_(tx.price) + ' 원',
+        '체결가: ' + formatNumber_(tx.price) + ' ' + priceUnit,
         '수량: ' + tx.quantity + ' 주 (금액: ' + formatNumber_(tx.amount) + '원)',
         '사유: ' + tx.reason,
         '체결일시: ' + tx.date

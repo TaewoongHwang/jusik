@@ -104,11 +104,20 @@ function buildAiReports() {
     var today = amTodayString_();
     var state = getFullWorkflowState_();
 
-    // 수동 실행 시: 워크플로우 상태가 오늘 gemini 단계가 아니면 신규 세션으로 초기화
+    // 수동 실행 시: 워크플로우 상태가 오늘 gemini 단계가 아니면 신규 세션으로 초기화하되, 오늘 진행중이던 마일스톤 상태는 안전 보존
     if (normalizeDateValue_(state.date) !== today || state.stage !== 'gemini') {
+      var prevInitialized = (normalizeDateValue_(state.date) === today) ? state.gemini_initialized : false;
+      var prevIndex = (normalizeDateValue_(state.date) === today) ? state.gemini_index : 0;
+      var prevTotal = (normalizeDateValue_(state.date) === today) ? state.gemini_total : 0;
+      var prevMarketDone = (normalizeDateValue_(state.date) === today) ? state.gemini_market_done : false;
+
       state = {
         date: today,
         stage: 'gemini',
+        gemini_initialized: prevInitialized,
+        gemini_index: prevIndex,
+        gemini_total: prevTotal,
+        gemini_market_done: prevMarketDone,
         started_at: state.started_at || amNowString_(),
         updated_at: amNowString_()
       };

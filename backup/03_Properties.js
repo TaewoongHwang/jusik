@@ -47,7 +47,12 @@ function setKrxApiKey(apiKey) {
 }
 
 function getKisEnv_() {
-  return getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_ENV, AM_CONFIG.DEFAULT_ENV);
+  var env = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_ENV, AM_CONFIG.DEFAULT_ENV);
+  if (env !== 'real') {
+    setScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_ENV, 'real');
+    return 'real';
+  }
+  return env;
 }
 
 function validateRealRuntimeConfig_() {

@@ -96,50 +96,6 @@ function deleteRowsByDate_(sheetName, dateValue) {
   rewriteDataRows_(sheet, headers.length, keepRows);
 }
 
-function deleteHoldingsCurrentBySources_(dateValue, sources) {
-  var sheetName = AM_CONFIG.SHEETS.HOLDINGS_CURRENT;
-  var sheet = ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
-  var values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return;
-  var headers = values[0];
-  var dateIndex = headers.indexOf('date');
-  var sourceIndex = headers.indexOf('source');
-  if (dateIndex < 0 || sourceIndex < 0) return;
-  
-  var keepRows = [];
-  var targetDateStr = normalizeDateValue_(dateValue);
-  
-  for (var rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
-    var rowDateStr = normalizeDateValue_(values[rowIndex][dateIndex]);
-    var rowSource = String(values[rowIndex][sourceIndex] || '').trim();
-    
-    var isTargetDate = (rowDateStr === targetDateStr);
-    var isTargetSource = false;
-    
-    if (isTargetDate) {
-      for (var i = 0; i < sources.length; i++) {
-        var srcCond = sources[i];
-        if (srcCond === 'kis' || srcCond === 'manual_') {
-          if (rowSource.indexOf(srcCond) === 0) {
-            isTargetSource = true;
-            break;
-          }
-        } else {
-          if (rowSource === srcCond) {
-            isTargetSource = true;
-            break;
-          }
-        }
-      }
-    }
-    
-    if (!(isTargetDate && isTargetSource)) {
-      keepRows.push(values[rowIndex]);
-    }
-  }
-  rewriteDataRows_(sheet, headers.length, keepRows);
-}
-
 function rewriteDataRows_(sheet, width, rows) {
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
@@ -635,8 +591,7 @@ function syncPropertiesFromSheet() {
     { key: 'KIS_ENV', desc: 'KIS 투자 환경 (real / mock)' },
     { key: 'KIS_BASE_URL', desc: '한국투자증권 API 통신 주소' },
     { key: 'ADMIN_TOKEN', desc: '웹앱 대시보드 디버그/진단용 관리자 인증 토큰' },
-    { key: 'WEB_APP_URL', desc: '구글 앱스 스크립트 웹앱 배포 실행 URL (/exec)' },
-    { key: 'CUSTOM_DASHBOARD_URL', desc: '경고 배너 우회 제거용 GitHub Pages / 외부 대시보드 주소' }
+    { key: 'WEB_APP_URL', desc: '구글 앱스 스크립트 웹앱 배포 실행 URL (/exec)' }
   ];
   
   var existingKeys = (rows || []).map(function(r) { return String(r.key || '').trim().toUpperCase(); });

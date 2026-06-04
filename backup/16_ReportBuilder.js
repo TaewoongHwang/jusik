@@ -1167,23 +1167,131 @@ function sendPremarketEmailReport() {
           }
         });
       } catch(e) {}
-      
-      var tgMsg = [
-        '<b>[AI 스캐너 장전 프리마켓 브리핑]</b> ' + today,
-        '',
-        '📊 시장 전망: ' + (report.market_bias || '중립'),
-        '',
-        '💡 오늘 관찰 우선순위 종목:',
-        (report.today_watch || []).slice(0, 3).map(function(w) {
-          var sym = normalizeStockSymbol_(w.symbol || '');
-          var ind = indicatorMap[sym] || {};
-          var trendBadge = (ind.trend_filter_passed === 'N') ? ' 🔴역배열' : ' 🟢정배열';
-          return '- ' + w.name + trendBadge + ' (' + w.watch_reason + ')';
-        }).join('\n'),
-        '',
-        '📬 장전 상세 이메일 보고서가 발송되었습니다.'
-      ].join('\n');
-      sendTelegramMessage(tgMsg);
+
+      // A) 지정학적 전쟁/군사 리스크 감지 및 밤사이 뉴스 수집
+      var isGeopoliticalRisk = false;
+      var geopoliticalDetails = '';
+      var overnightNewsLines = [];
+      try {
+        if (payload.news && payload.news.length > 0) {
+          payload.news.forEach(function(row) {
+            var summary = row.summary || {};
+            var keyNews = summary.key_news || [];
+            
+            if (keyNews.length > 0) {
+              keyNews.slice(0, 3).forEach(function(item) {
+                var topic = item.topic || '';
+                var comment = item.comment || '';
+                var combinedText = topic + ' ' + comment;
+                
+                var riskKeywords = ['전쟁', '지정학', '무력', '충돌', '공격', '폭격', '미사일', '군사', '이란', '이스라엘', '우크라이나', '대만', '북한'];
+                var matched = riskKeywords.some(function(kw) {
+                  return combinedText.indexOf(kw) >= 0;
+                });
+                
+                if (matched) {
+                  isGeopoliticalRisk = true;
+                  geopoliticalDetails = topic + ': ' + comment;
+                }
+                
+                if (row.session === 'us_close') {
+                  var impactBadge = (item.impact === 'risk_off') ? '🔴위험회피' : ((item.impact === 'risk_on') ? '🟢위험선호' : '⚪중립');
+                  overnightNewsLines.push('• <b>' + topic + '</b> (' + impactBadge + ' / ' + (item.affected_sectors || []).join(',') + ')');
+                  overnightNewsLines.push('  ' + comment);
+                }
+              });
+            }
+          });
+        }
+      } catch(eNews) {
+        logWarn_('premarket_email', 'Failed to scan overnight news for risk alarms in telegram builder', { error: eNews.message });
+      }
+
+      var tgLines = [
+        '🌅 <b>[AI 스캐너 장전 프리마켓 풀 브리핑]</b>',
+        '📅 ' + today,
+        ''
+      ];
+
+      // 지정학적 리스크 경보 우선 기입!
+      if (isGeopoliticalRisk) {
+        tgLines.push('🚨 <b>[글로벌 지정학적 전쟁 위험 경보]</b>');
+        tgLines.push('밤사이 지정학적 군사 충돌 및 전쟁 리스크 뉴스가 수집되었습니다! 오늘 시초가 코스피/코스닥 지수의 강한 급락 변동성이 우려되오니 안전자산 방어전략과 시나리오별 손절선을 차분히 고수하십시오.');
+        if (geopoliticalDetails) {
+          tgLines.push('👉 <i>포착 악재: ' + geopoliticalDetails + '</i>');
+        }
+        tgLines.push('');
+      }
+
+      tgLines.push('━━━━━━━━━━━━━━━━━━━━━');
+      tgLines.push('📊 <b>시장 전망</b>: ' + (report.market_bias || '중립'));
+
+      // 전일 요약이 있으면 추가
+      if (report.opening_view || report.summary) {
+        tgLines.push('');
+        tgLines.push('📝 <b>아침 시황 가이드</b>');
+        tgLines.push(report.opening_view || report.summary);
+      }
+
+      // 밤사이 주요 미국 마감 뉴스 추가
+      if (overnightNewsLines.length > 0) {
+        tgLines.push('');
+        tgLines.push('━━━━━━━━━━━━━━━━━━━━━');
+        tgLines.push('🌐 <b>새벽 주요 글로벌 뉴스:</b>');
+        tgLines.push(overnightNewsLines.join('\n'));
+      }
+
+      // 관찰 종목 TOP 5
+      tgLines.push('');
+      tgLines.push('━━━━━━━━━━━━━━━━━━━━━');
+      tgLines.push('💡 <b>오늘 관찰 우선순위 종목</b>');
+      (report.today_watch || []).slice(0, 5).forEach(function(w, idx) {
+        var sym = normalizeStockSymbol_(w.symbol || '');
+        var ind = indicatorMap[sym] || {};
+        var trendBadge = (ind.trend_filter_passed === 'N') ? '🔴역배열' : '🟢정배열';
+        tgLines.push((idx + 1) + '. <b>' + w.name + '</b> ' + trendBadge);
+        tgLines.push('   ' + (w.watch_reason || ''));
+        
+        var plan = null;
+        if (payload.plans) {
+          for (var pi = 0; pi < payload.plans.length; pi++) {
+            if (normalizeStockSymbol_(payload.plans[pi].symbol) === sym) {
+              plan = payload.plans[pi]; break;
+            }
+          }
+        }
+        if (plan && plan.first_entry_price) {
+          tgLines.push('   📍 1차 검토가: ' + formatNumber_(plan.first_entry_price));
+        }
+      });
+
+      // 시나리오 전망
+      if (payload.scenarios && payload.scenarios.length > 0) {
+        tgLines.push('');
+        tgLines.push('━━━━━━━━━━━━━━━━━━━━━');
+        tgLines.push('🔮 <b>시나리오 전망</b>');
+        payload.scenarios.slice(0, 3).forEach(function(s) {
+          var label = s.label || s.scenario_label || '';
+          var desc = s.description || s.action || '';
+          tgLines.push('• <b>' + label + '</b>: ' + desc);
+        });
+      }
+
+      // 모의투자 현황
+      if (payload.paper_portfolio) {
+        var pTotal = Number(payload.paper_portfolio.total_eval_amount || 0);
+        var pCum = Number(payload.paper_portfolio.cumulative_return_pct || 0);
+        var pCumSign = pCum > 0 ? '+' : '';
+        tgLines.push('');
+        tgLines.push('━━━━━━━━━━━━━━━━━━━━━');
+        tgLines.push('💰 <b>모의투자 현황</b>');
+        tgLines.push('총자산: ' + formatNumber_(pTotal) + ' 원 (' + pCumSign + formatPercentText_(pCum) + ')');
+      }
+
+      tgLines.push('');
+      tgLines.push('📬 장전 상세 이메일 보고서가 발송되었습니다.');
+
+      sendTelegramMessage(tgLines.join('\n'));
     } catch(errTg) {
       logWarn_('premarket_email', 'Failed to send premarket summary telegram', { error: errTg.message || String(errTg) });
     }
@@ -1251,6 +1359,22 @@ function sendMarketHolidayEmail_(context, calendar) {
     logInfo_('email_report', 'Daily email report sent', { date: today, recipient: recipient, holiday: true });
   }
   logInfo_('holiday_email', 'Market holiday email sent', { date: today, context: context, recipient: recipient, calendar: payload.calendar });
+  try {
+    var cal = payload.calendar || {};
+    var tgMsg = [
+      '🏖️ <b>[AI 스캐너 휴장일 브리핑]</b> ' + today,
+      '',
+      '📅 오늘은 <b>' + (cal.holiday_name || '휴장일') + '</b>입니다.',
+      cal.next_open_date ? '📌 다음 개장일: ' + cal.next_open_date : '',
+      '',
+      '💡 휴장일에도 AI 스캐너는 해외 시장 동향, 거시경제 데이터, 뉴스 센티먼트를 꾸준히 수집하고 있습니다.',
+      '',
+      '📬 휴장일 상세 브리핑 이메일이 발송되었습니다.'
+    ].filter(function(line) { return line !== ''; }).join('\n');
+    sendTelegramMessage(tgMsg);
+  } catch(errTg) {
+    logWarn_('holiday_email', 'Failed to send holiday telegram', { error: errTg.message || String(errTg) });
+  }
   return { date: today, recipient: recipient, sent: true, holiday: true };
 }
 
@@ -1493,10 +1617,44 @@ function validatePremarketReport_(report) {
 function buildPremarketEmailHtml_(payload) {
   var report = payload.report || {};
   payload.briefing = payload.briefing || report;
+  
+  // 지정학적 전쟁/군사 충돌 리스크 키워드 감지
+  var isGeopoliticalRisk = false;
+  var geopoliticalAlertHtml = '';
+  try {
+    if (payload.news && payload.news.length > 0) {
+      var riskKeywords = ['전쟁', '지정학', '무력', '충돌', '공격', '폭격', '미사일', '군사', '이란', '이스라엘', '우크라이나', '대만', '북한'];
+      for (var nIdx = 0; nIdx < payload.news.length; nIdx++) {
+        var row = payload.news[nIdx];
+        var summary = row.summary || {};
+        var keyNews = summary.key_news || [];
+        for (var kIdx = 0; kIdx < keyNews.length; kIdx++) {
+          var item = keyNews[kIdx];
+          var combinedText = (item.topic || '') + ' ' + (item.comment || '');
+          var matched = riskKeywords.some(function(kw) {
+            return combinedText.indexOf(kw) >= 0;
+          });
+          if (matched) {
+            isGeopoliticalRisk = true;
+            geopoliticalAlertHtml = 
+              '<div style="border:2px solid #ef4444;border-radius:8px;padding:14px;background:#fef2f2;margin-bottom:16px;color:#991b1b;font-size:14px;line-height:1.6">' +
+              '<div style="font-size:16px;font-weight:bold;margin-bottom:6px">🚨 글로벌 지정학적 전쟁 및 군사적 리스크 감지 경보</div>' +
+              '밤사이 글로벌 지정학적 무력 충돌 및 전쟁 관련 심각한 악재 뉴스가 포착되었습니다. (<b>' + escapeHtml_(item.topic) + '</b>: ' + escapeHtml_(item.comment) + ') ' +
+              '<br/>방산, 에너지 섹터의 수급 유입 및 전체 시장 투매(Risk-Off) 충격에 대응하기 위해 사전에 세운 무효화(손절) 기준선과 자산 비중 조절 계획을 보수적으로 철저하게 고수하십시오.' +
+              '</div>';
+            break;
+          }
+        }
+        if (isGeopoliticalRisk) break;
+      }
+    }
+  } catch(e) {}
+
   return [
     '<div style="font-family:Arial,Apple SD Gothic Neo,Malgun Gothic,sans-serif;color:#111827;max-width:1040px">',
     '<h1 style="font-size:24px;margin:0 0 6px">' + ko_('premarket_title') + '</h1>',
     '<div style="color:#6b7280;margin-bottom:14px">' + escapeHtml_(payload.date) + ' / ' + ko_('base_leader_date') + ': ' + escapeHtml_(payload.base_leader_date) + '</div>',
+    geopoliticalAlertHtml, // 지정학적 리스크 긴급 박스 삽입!
     buildPremarketDataFreshnessHtml_(payload),
     buildMarketCalendarNoticeHtml_(payload.market_calendar),
     '<div style="border:1px solid #d1d5db;border-radius:8px;padding:14px;background:#f9fafb;margin-bottom:16px">',
@@ -2171,40 +2329,7 @@ function sendDailyEmailReport() {
     });
     markDailyEmailSent_(dateValue);
     try {
-      var daily = payload.paper_portfolio ? Number(payload.paper_portfolio.daily_return_pct || 0) : 0;
-      var cumulative = payload.paper_portfolio ? Number(payload.paper_portfolio.cumulative_return_pct || 0) : 0;
-      var total = payload.paper_portfolio ? Number(payload.paper_portfolio.total_eval_amount || 0) : 0;
-      var dailySign = daily > 0 ? '+' : '';
-      var cumSign = cumulative > 0 ? '+' : '';
-      
-      var indicatorMap = {};
-      try {
-        readObjects_(AM_CONFIG.SHEETS.INDICATORS_DAILY).forEach(function(row) {
-          if (normalizeDateValue_(row.date) === normalizeDateValue_(dateValue)) {
-            indicatorMap[normalizeStockSymbol_(row.symbol)] = row;
-          }
-        });
-      } catch(e) {}
-      
-      var tgMsg = [
-        '<b>[AI 스캐너 장마감 브리핑]</b> ' + dateValue,
-        '',
-        '📊 시장 진단: ' + (payload.briefing.market_regime || '중립'),
-        '💰 가상 총자산: ' + formatNumber_(total) + ' 원',
-        '   - 일일 변동: ' + dailySign + formatPercentText_(daily),
-        '   - 누적 수익률: ' + cumSign + formatPercentText_(cumulative),
-        '',
-        '🔥 주도주 TOP 3 후보:',
-        (payload.leaders || []).slice(0, 3).map(function(l) {
-          var sym = normalizeStockSymbol_(l.symbol || '');
-          var ind = indicatorMap[sym] || {};
-          var trendBadge = (ind.trend_filter_passed === 'N') ? ' 🔴역배열' : ' 🟢정배열';
-          return '- ' + l.name + trendBadge + ' (' + l.sector + ', 점수 ' + l.total_score + ')';
-        }).join('\n'),
-        '',
-        '📬 장마감 상세 이메일 보고서가 발송되었습니다.'
-      ].join('\n');
-      sendTelegramMessage(tgMsg);
+      sendDailyTelegramReport_(payload, dateValue);
     } catch(errTg) {
       logWarn_('email_report', 'Failed to send daily summary telegram', { error: errTg.message || String(errTg) });
     }
@@ -3855,4 +3980,144 @@ function buildPaperTradingHtml_(payload) {
       '<div style="font-weight:700;font-size:13px;margin-bottom:6px;color:#1f2937">최근 가상 체결 내역 (최대 5건)</div>' +
       tradeBlock +
     '</div>';
+}
+
+/**
+ * 장마감 이메일 리포트와 동일한 핵심 데이터를 텔레그램 메시지로 풍부하게 전송합니다.
+ * 텔레그램 4096자 제한을 고려하여 최대 3개 메시지로 분할 전송합니다.
+ */
+function sendDailyTelegramReport_(payload, dateValue) {
+  var indicatorMap = {};
+  try {
+    readObjects_(AM_CONFIG.SHEETS.INDICATORS_DAILY).forEach(function(row) {
+      if (normalizeDateValue_(row.date) === normalizeDateValue_(dateValue)) {
+        indicatorMap[normalizeStockSymbol_(row.symbol)] = row;
+      }
+    });
+  } catch(e) {}
+
+  // ── 메시지 1: 시장 진단 + 핵심 요약 ──
+  var regime = payload.macro.market_regime || payload.briefing.market_regime || '중립';
+  var macroScore = payload.macro.macro_alignment_score || '-';
+  var summary = payload.briefing.summary || '';
+
+  var daily = payload.paper_portfolio ? Number(payload.paper_portfolio.daily_return_pct || 0) : 0;
+  var cumulative = payload.paper_portfolio ? Number(payload.paper_portfolio.cumulative_return_pct || 0) : 0;
+  var total = payload.paper_portfolio ? Number(payload.paper_portfolio.total_eval_amount || 0) : 0;
+  var dailySign = daily > 0 ? '+' : '';
+  var cumSign = cumulative > 0 ? '+' : '';
+
+  var msg1Lines = [
+    '📊 <b>[AI 스캐너 장마감 풀 리포트]</b>',
+    '📅 ' + dateValue,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    '🎯 <b>시장 진단</b>: ' + regime + ' (매크로 점수 ' + macroScore + '/10)',
+    '',
+    '📝 <b>1분 요약</b>',
+    summary,
+    ''
+  ];
+
+  // 뉴스 핵심 요약 (상위 3개)
+  if (payload.news && payload.news.length > 0) {
+    msg1Lines.push('━━━━━━━━━━━━━━━━━━━━━');
+    msg1Lines.push('📰 <b>주요 뉴스</b>');
+    payload.news.slice(0, 3).forEach(function(n) {
+      msg1Lines.push('• ' + (n.title || n.headline || ''));
+    });
+    msg1Lines.push('');
+  }
+
+  // 시나리오 요약
+  if (payload.scenarios && payload.scenarios.length > 0) {
+    msg1Lines.push('━━━━━━━━━━━━━━━━━━━━━');
+    msg1Lines.push('🔮 <b>시나리오 전망</b>');
+    payload.scenarios.slice(0, 3).forEach(function(s) {
+      var label = s.label || s.scenario_label || '';
+      var desc = s.description || s.action || '';
+      msg1Lines.push('• <b>' + label + '</b>: ' + desc);
+    });
+    msg1Lines.push('');
+  }
+
+  // 모의투자 현황
+  msg1Lines.push('━━━━━━━━━━━━━━━━━━━━━');
+  msg1Lines.push('💰 <b>모의투자 현황</b>');
+  msg1Lines.push('총자산: ' + formatNumber_(total) + ' 원');
+  msg1Lines.push('일일 변동: ' + dailySign + formatPercentText_(daily));
+  msg1Lines.push('누적 수익률: ' + cumSign + formatPercentText_(cumulative));
+
+  sendTelegramMessage(msg1Lines.join('\n'));
+  Utilities.sleep(500);
+
+  // ── 메시지 2: 주도주 TOP 5 상세 ──
+  var msg2Lines = [
+    '🔥 <b>[주도주 TOP 5 상세]</b> ' + dateValue,
+    ''
+  ];
+  (payload.leaders || []).slice(0, 5).forEach(function(l, idx) {
+    var sym = normalizeStockSymbol_(l.symbol || '');
+    var ind = indicatorMap[sym] || {};
+    var trendBadge = (ind.trend_filter_passed === 'N') ? '🔴역배열' : '🟢정배열';
+    var plan = null;
+    if (payload.plans) {
+      for (var pi = 0; pi < payload.plans.length; pi++) {
+        if (normalizeStockSymbol_(payload.plans[pi].symbol) === sym) {
+          plan = payload.plans[pi]; break;
+        }
+      }
+    }
+    msg2Lines.push((idx + 1) + '. <b>' + l.name + '</b> (' + sym + ') ' + trendBadge);
+    msg2Lines.push('   섹터: ' + (l.sector || '-') + ' | 총점: ' + (l.total_score || '-') + '점');
+    if (plan) {
+      if (plan.first_entry_price) msg2Lines.push('   📍 1차 검토가: ' + formatNumber_(plan.first_entry_price));
+      if (plan.invalid_price) msg2Lines.push('   ⛔ 무효화 가격: ' + formatNumber_(plan.invalid_price));
+    }
+    msg2Lines.push('');
+  });
+
+  // 코스닥 TOP 3
+  if (payload.kosdaq_leaders && payload.kosdaq_leaders.length > 0) {
+    msg2Lines.push('━━━━━━━━━━━━━━━━━━━━━');
+    msg2Lines.push('📈 <b>코스닥 주도주 TOP 3</b>');
+    payload.kosdaq_leaders.slice(0, 3).forEach(function(kl, idx) {
+      msg2Lines.push((idx + 1) + '. ' + kl.name + ' (' + normalizeStockSymbol_(kl.symbol) + ') 총점 ' + (kl.total_score || '-'));
+    });
+  }
+
+  sendTelegramMessage(msg2Lines.join('\n'));
+  Utilities.sleep(500);
+
+  // ── 메시지 3: 보유종목 어드바이스 ──
+  if (payload.holdings_advice && payload.holdings_advice.length > 0) {
+    var msg3Lines = [
+      '📋 <b>[보유종목 AI 어드바이스]</b> ' + dateValue,
+      ''
+    ];
+    payload.holdings_advice.forEach(function(ha) {
+      var actionBadge = '';
+      var act = String(ha.action_view || '').toLowerCase();
+      if (act === 'hold_watch') actionBadge = '🟢 보유관찰';
+      else if (act === 'risk_reduce_review') actionBadge = '🟡 리스크점검';
+      else if (act === 'avoid_add') actionBadge = '🔴 추가매수금지';
+      else actionBadge = '⚪ 재점검필요';
+
+      msg3Lines.push('<b>' + (ha.name || ha.symbol) + '</b> ' + actionBadge);
+      if (ha.summary) msg3Lines.push('  ' + ha.summary);
+      if (ha.risk_comment) msg3Lines.push('  ⚠️ ' + ha.risk_comment);
+      msg3Lines.push('');
+    });
+
+    // 포트폴리오 리스크 경고
+    if (payload.portfolio_risks && payload.portfolio_risks.length > 0) {
+      msg3Lines.push('━━━━━━━━━━━━━━━━━━━━━');
+      msg3Lines.push('⚠️ <b>포트폴리오 리스크</b>');
+      payload.portfolio_risks.forEach(function(pr) {
+        msg3Lines.push('• ' + (pr.message || ''));
+      });
+    }
+
+    sendTelegramMessage(msg3Lines.join('\n'));
+  }
 }

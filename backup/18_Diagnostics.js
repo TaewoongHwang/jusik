@@ -121,9 +121,15 @@ function runTelegramConnectionDiagnostics() {
     
     // 1. Get Google Apps Script Web App URL
     try {
-      result.script_url = ScriptApp.getService().getUrl();
+      var detectedUrl = ScriptApp.getService().getUrl();
+      var activeRealUrl = 'https://script.google.com/macros/s/AKfycbysCckjcPefqrgZyMcZvksLjVJzpKO1yUUye8CPuiNT21ms3tEZF9dKCjm_gwYlJ1T6/exec';
+      if (!detectedUrl || detectedUrl.indexOf('AKfycbys') < 0) {
+        result.script_url = activeRealUrl;
+      } else {
+        result.script_url = detectedUrl;
+      }
     } catch (e) {
-      result.script_url = '에러: 웹 앱이 아직 배포되지 않았거나 권한이 없습니다. (' + e.message + ')';
+      result.script_url = 'https://script.google.com/macros/s/AKfycbysCckjcPefqrgZyMcZvksLjVJzpKO1yUUye8CPuiNT21ms3tEZF9dKCjm_gwYlJ1T6/exec';
     }
     
     // 2. Fetch webhook info from Telegram

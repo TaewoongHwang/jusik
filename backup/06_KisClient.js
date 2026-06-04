@@ -20,11 +20,127 @@ function kisGet_(path, params, trId) {
 
 function fetchKisCurrentPrice_(symbol) {
   symbol = normalizeStockSymbol_(symbol);
-  var response = kisGet_('/uapi/domestic-stock/v1/quotations/inquire-price', {
-    FID_COND_MRKT_DIV_CODE: 'J',
-    FID_INPUT_ISCD: symbol
-  }, 'FHKST01010100');
-  return normalizeKisCurrentPrice_(symbol, response);
+  var lastError = null;
+  
+  // KIS 점검 및 통신 장애 시 3회 지수적 백오프 재시도 루프
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      var response = kisGet_('/uapi/domestic-stock/v1/quotations/inquire-price', {
+        FID_COND_MRKT_DIV_CODE: 'J',
+        FID_INPUT_ISCD: symbol
+      }, 'FHKST01010100');
+      return normalizeKisCurrentPrice_(symbol, response);
+    } catch (err) {
+      lastError = err;
+      logWarn_('kis_client', 'KIS domestic price fetch failed; retrying...', { symbol: symbol, attempt: attempt, error: err.message });
+      Utilities.sleep(1000 * attempt); // 1초, 2초, 3초 지연
+    }
+  }
+  
+  // ==================================================
+  // 🚀 [명품 우회 백업] KIS API 완전 실패 시 네이버 금융 실시간 크롤링 기동!
+  // ==================================================
+  logWarn_('kis_client', 'KIS price fetch completely failed after 3 attempts; trying Naver finance crawler', { symbol: symbol });
+  try {
+    var naverQuote = fetchNaverStockPrice_(symbol);
+    if (naverQuote) {
+      logInfo_('kis_client', 'Successfully fetched fallback price from Naver finance', { symbol: symbol, price: naverQuote.close, change: naverQuote.change_pct });
+      return naverQuote;
+    }
+  } catch(naverErr) {
+    logWarn_('kis_client', 'Naver price crawler fallback failed', { symbol: symbol, error: naverErr.message });
+  }
+  
+  // 3회 실패 및 네이버 실패 시 데이터베이스 시트 백업 가격 조회 작동
+  logWarn_('kis_client', 'Naver crawler failed; looking up database backup', { symbol: symbol });
+  try {
+    var backupPrice = getLatestBackupPriceForSymbol_(symbol);
+    if (backupPrice > 0) {
+      return {
+        symbol: symbol,
+        close: backupPrice,
+        change_pct: 0,
+        volume: 0,
+        trading_value: 0,
+        market: 'KOSPI',
+        sector: '기타',
+        is_backup: true
+      };
+    }
+  } catch(ex) {
+    logWarn_('kis_client', 'Database backup price lookup failed', { symbol: symbol, error: ex.message });
+  }
+  
+  throw lastError;
+}
+
+/**
+  * 네이버 금융 메인 페이지 웹 크롤링을 통한 실시간 현재가/등락률 획득 (EUC-KR 자동 변환 대응)
+  */
+function fetchNaverStockPrice_(symbol) {
+  try {
+    var cleanSymbol = normalizeStockSymbol_(symbol);
+    var url = 'https://finance.naver.com/item/main.naver?code=' + cleanSymbol;
+    var response = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    
+    if (response.getResponseCode() === 200) {
+      var html = response.getContentText('EUC-KR'); // 네이버 증권은 EUC-KR 인코딩 사용
+      
+      // 1. 현재가 파싱
+      var priceMatch = html.match(/현재가\s+([0-9,]+)/i);
+      var close = 0;
+      if (priceMatch && priceMatch[1]) {
+        close = Number(priceMatch[1].replace(/,/g, ''));
+      } else {
+        var blindMatch = html.match(/<p\s+class="no_today">[^]*?<span\s+class="blind">([0-9,]+)<\/span>/i);
+        if (blindMatch && blindMatch[1]) {
+          close = Number(blindMatch[1].replace(/,/g, ''));
+        }
+      }
+      
+      // 2. 등락률 파싱
+      var changePct = 0;
+      var changeMatch = html.match(/([플러스|마이너스]+)\s+([0-9.]+)\s+퍼센트/i);
+      if (changeMatch && changeMatch[2]) {
+        var sign = (changeMatch[1] === '플러스') ? 1 : -1;
+        changePct = Number(changeMatch[2]) * sign;
+      } else {
+        var pctMatch = html.match(/([+\-]?([0-9.]+))\s*%/);
+        if (pctMatch && pctMatch[2]) {
+          changePct = Number(pctMatch[1]);
+        }
+      }
+      
+      // 3. 한글명 파싱
+      var name = symbol;
+      var ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+      if (ogTitleMatch && ogTitleMatch[1]) {
+        name = ogTitleMatch[1].split(':')[0].split('-')[0].trim();
+      }
+      
+      if (close > 0) {
+        return {
+          symbol: cleanSymbol,
+          name: name,
+          close: close,
+          change_pct: changePct,
+          volume: 0,
+          trading_value: 0,
+          market: 'KOSPI',
+          sector: 'ETF',
+          is_naver_fallback: true
+        };
+      }
+    }
+  } catch(e) {
+    logWarn_('kis_client', 'Failed to fetch price from Naver fallback for ' + symbol, { error: e.message });
+  }
+  return null;
 }
 
 function fetchKisDailyPrices_(symbol, startDate, endDate) {
@@ -51,6 +167,7 @@ function normalizeKisCurrentPrice_(symbol, response) {
   }
   return {
     symbol: symbol,
+    name: String(output.hts_kor_isnm || output.prdt_abrv_name || output.prdt_name || '').trim(),
     close: close,
     change_pct: Number(output.prdy_ctrt || output.change_pct || 0),
     volume: Number(output.acml_vol || output.volume || 0),
@@ -151,6 +268,7 @@ function fetchKisOverseasCurrentPrice_(symbol) {
       if (output && output.last && Number(output.last) > 0) {
         return {
           symbol: symbol,
+          name: String(output.expl || output.name || symbol).trim(),
           close: Number(output.last),
           change_pct: Number(output.rate || 0),
           exchange: exchanges[i],
@@ -205,4 +323,38 @@ function fetchUpbitCurrentPrice_(market) {
   cache.put(cacheKey, JSON.stringify(result), 600);
   
   return result;
+}
+
+/**
+ * KIS 가격 조회 최종 실패 시, 데이터베이스 시트에서 해당 종목의 가장 최신 시세를 백업으로 탐색합니다.
+ */
+function getLatestBackupPriceForSymbol_(symbol) {
+  symbol = normalizeStockSymbol_(symbol);
+  
+  // 1순위: holdings_current 시트에서 최신 평가 가격 탐색
+  try {
+    var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
+    var matches = holdings.filter(function(row) {
+      return normalizeStockSymbol_(row.symbol) === symbol && Number(row.current_price || 0) > 0;
+    });
+    if (matches.length > 0) {
+      matches.sort(function(a, b) {
+        return String(b.date).localeCompare(String(a.date));
+      });
+      return Number(matches[0].current_price);
+    }
+  } catch(e) {}
+  
+  // 2순위: market_universe 시트에서 최종 백업 가격 탐색
+  try {
+    var universe = readObjects_(AM_CONFIG.SHEETS.MARKET_UNIVERSE);
+    var matches = universe.filter(function(row) {
+      return normalizeStockSymbol_(row.symbol) === symbol && Number(row.close || row.current_price || 0) > 0;
+    });
+    if (matches.length > 0) {
+      return Number(matches[0].close || matches[0].current_price);
+    }
+  } catch(e) {}
+  
+  return 0; // 백업 실패 시 0 리턴
 }

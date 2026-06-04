@@ -275,15 +275,36 @@ function generateIntradayRiskTip_(symbol, name, currentPrice, changePct, returnP
       '[최신 시장 폭(Market Breadth) 현황]',
       breadthText,
       '',
-      '가장 핵심적인 리스크 관리 행동 지침 1~2문장만 텍스트로 출력하세요. (JSON 형태 아님, 따옴표 없이 텍스트만 출력)'
+      '[제약 사항 - 매우 중요!]',
+      '1. 출력 텍스트에 **, *, _, ` 등 어떠한 마크다운 기호도 절대 사용하지 마십시오. 순수 텍스트(Plain Text)로만 출력해야 합니다.',
+      '2. 임의의 HTML 태그(예: <b>, <a> 등)를 마음대로 생성하지 마십시오.',
+      '3. 문장이 도중에 끊기지 않도록 확실하게 마침표(.)를 찍어 완성된 1~2문장으로 끝맺으십시오.',
+      '',
+      '가장 핵심적인 리스크 관리 행동 지침 1~2문장만 순수 텍스트로 출력하세요. (JSON 형태 아님, 따옴표 없이 텍스트만 출력)'
     ].join('\n');
     
     var tip = callGeminiText_(prompt, {
       modelUseCase: 'intraday_alert',
       temperature: 0.7,
-      maxOutputTokens: 256
+      maxOutputTokens: 400 // 한국어의 풍부한 1~2문장 완결성을 고려해 400 토큰으로 넉넉히 완화하여 잘림 차단
     });
-    return tip;
+    
+    if (!tip) return '';
+    
+    // 텔레그램 충돌 방지를 위한 마크다운 및 특수 유발 기호 사전 정화 처리
+    var cleanTip = String(tip)
+      .replace(/[\*\_\`]/g, '') // *, _, ` 기호 원천 제거
+      .trim();
+    
+    // 텔레그램 HTML parse_mode 렌더링 시 태그 오인 깨짐(<, > 기호 등) 방지를 위한 이스케이프 처리
+    var escapedTip = cleanTip
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+      
+    return escapedTip;
   } catch (err) {
     logWarn_('telegram_monitor', 'Failed to generate intraday risk tip with Gemini', { error: err.message });
     return '';
@@ -517,8 +538,9 @@ function checkIntradayMonitors() {
     var isRealAccount = false;
     
     try {
-      var portMode = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.PORTFOLIO_MODE, 'real');
-      var isRealAccountMode = (portMode === 'real' && !!getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_CANO, ''));
+      // [보안 안전장치] 실시간 텔레그램 감시는 대시보드 모드 토글(PAPER) 상태와 전혀 무관하게,
+      // 항상 실제 자산(실계좌 KIS 국내/해외 + 수동 등록 자산)을 최우선 안전 감시하도록 강제 고정합니다.
+      var isRealAccountMode = (!!getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_CANO, ''));
       
       if (isRealAccountMode) {
         // A) 실계좌 KIS 국내 잔고 로드
@@ -532,7 +554,9 @@ function checkIntradayMonitors() {
               quantity: h.quantity,
               entry_price: h.avg_price,
               current_price: h.current_price,
-              profit_loss_pct: h.profit_loss_pct
+              profit_loss_pct: h.profit_loss_pct,
+              broker: 'kis',
+              source: 'kis_inquire_balance'
             };
           });
           isRealAccount = true;
@@ -544,7 +568,11 @@ function checkIntradayMonitors() {
           var normalizedOvr = normalizeKisOverseasAccountBalance_(ovrResponse);
           if (normalizedOvr && normalizedOvr.holdings) {
             normalizedOvr.holdings.forEach(function(h) {
-              var isDup = positions.some(function(p) { return p.symbol.toLowerCase() === h.symbol.toLowerCase(); });
+              // 심볼과 브로커가 모두 일치할 때만 중복으로 처리
+              var isDup = positions.some(function(p) {
+                var pBroker = normalizeBrokerName_((p.source === 'kis_inquire_balance' || p.source === 'kis_overseas_balance') ? 'kis' : (p.source || '').replace('manual_', ''));
+                return p.symbol.toLowerCase() === h.symbol.toLowerCase() && pBroker === 'kis';
+              });
               if (!isDup) {
                 positions.push({
                   symbol: h.symbol,
@@ -552,7 +580,9 @@ function checkIntradayMonitors() {
                   quantity: h.quantity,
                   entry_price: h.avg_price,
                   current_price: h.current_price,
-                  profit_loss_pct: h.profit_loss_pct
+                  profit_loss_pct: h.profit_loss_pct,
+                  broker: 'kis',
+                  source: 'kis_overseas_balance'
                 });
               }
             });
@@ -569,7 +599,12 @@ function checkIntradayMonitors() {
             var mPos = normalizeManualHoldingRow_(today, mRow);
             if (!mPos || !mPos.symbol || mPos.quantity <= 0) return;
             
-            var isDup = positions.some(function(p) { return p.symbol.toLowerCase() === mPos.symbol.toLowerCase(); });
+            // 심볼과 브로커가 모두 일치할 때만 중복으로 처리
+            var isDup = positions.some(function(p) {
+              var pBroker = normalizeBrokerName_((p.source === 'kis_inquire_balance' || p.source === 'kis_overseas_balance') ? 'kis' : (p.source || '').replace('manual_', ''));
+              var mBroker = normalizeBrokerName_(mRow.broker);
+              return p.symbol.toLowerCase() === mPos.symbol.toLowerCase() && pBroker === mBroker;
+            });
             if (!isDup) {
               positions.push({
                 symbol: mPos.symbol,
@@ -577,7 +612,9 @@ function checkIntradayMonitors() {
                 quantity: mPos.quantity,
                 entry_price: mPos.avg_price,
                 current_price: mPos.current_price,
-                profit_loss_pct: mPos.profit_loss_pct
+                profit_loss_pct: mPos.profit_loss_pct,
+                broker: normalizeBrokerName_(mRow.broker),
+                source: 'manual_' + String(mRow.broker || 'external').trim()
               });
             }
           });
@@ -619,6 +656,13 @@ function checkIntradayMonitors() {
       try {
         var quote = fetchKisCurrentPrice_(symbol);
         var currentPrice = Number(quote.close);
+        
+        // [중요!] 가격 0원 오반환(휴장일/통신장애) 시 패닉셀 오류 유발 차단 안전 장치
+        if (!currentPrice || currentPrice <= 0) {
+          logWarn_('telegram_monitor', 'Intraday price fetched was 0 or invalid; skipping check to prevent panic sell false alarm', { symbol: symbol });
+          return;
+        }
+        
         var changePct = Number(quote.change_pct || 0); // 당일 전일 대비 등락률
         
         var entryPrice = Number(pos.entry_price || 0);
@@ -732,8 +776,24 @@ function checkIntradayMonitors() {
             }
           }
           
-          // 2) 손실 마일스톤 (-3%, -5%) -> 조기 리스크 관리
-          if (returnPct <= -5) {
+          // 2) 손실 마일스톤 (-3%, -5%, -10%) -> 조기 리스크 관리 및 최후 생명선 방어
+          if (returnPct <= -10) {
+            var cacheKeyLoss10 = 'TG_SENT_LOSS_10_' + today + '_' + symbol;
+            if (getScriptProperty_(cacheKeyLoss10, '') !== 'Y') {
+              var msgLoss10 = [
+                '🚨 <b>[보유 리스크 최상위 비상 경보: -10% 폭락]</b>',
+                '종목명: <b>' + pos.name + '</b> (' + symbol + ')',
+                '현재가: ' + formatNumber_(currentPrice) + ' 원 | 평단가: ' + formatNumber_(entryPrice) + ' 원',
+                '현재 누적 수익률: <b>' + returnPct + '%</b> 🔴🔴',
+                '설명: 평단 대비 누적 손실률이 무려 -10%를 돌파하여 생명선 기준 이탈이 확인되었습니다. 무조건적인 추가 매수를 금지하시고, 손절 시나리오 또는 긴급 비중 축소 리스크 원칙을 강제로 이행하시길 강력 제안합니다.'
+              ].join('\n');
+              var tip = generateIntradayRiskTip_(symbol, pos.name, currentPrice, changePct, returnPct, '평단 대비 -10% 초치명적 폭락', breadthText);
+              if (tip) msgLoss10 += '\n\n💡 <b>[AI 리스크 관리 팁]</b>\n' + tip;
+              sendTelegramMessage(msgLoss10);
+              setScriptProperty_(cacheKeyLoss10, 'Y');
+              Utilities.sleep(150);
+            }
+          } else if (returnPct <= -5) {
             var cacheKeyLoss5 = 'TG_SENT_LOSS_5_' + today + '_' + symbol;
             if (getScriptProperty_(cacheKeyLoss5, '') !== 'Y') {
               var msgLoss5 = [
@@ -934,3 +994,58 @@ function checkOvernightUsMarket() {
     sendTelegramMessage(msg);
   });
 }
+
+/**
+ * 텔레그램 봇에 항상 고정 노출되는 하단 메뉴 명령어(/holdings, /set, /clear 등) 목록을 영구 주입합니다.
+ */
+function setTelegramCommands() {
+  var token = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.TELEGRAM_BOT_TOKEN, '');
+  if (!token) {
+    logWarn_('telegram', 'Telegram setMyCommands skipped: Bot token is not configured.', {});
+    return { ok: false, description: 'No bot token configured.' };
+  }
+  
+  var url = 'https://api.telegram.org/bot' + token + '/setMyCommands';
+  var commands = [
+    { command: 'holdings', description: '📈 통합 자산 실시간 평가액 & 수익률 조회' },
+    { command: 'set', description: '🛠️ 수동 자산 등록 (최종 잔고 덮어쓰기)' },
+    { command: 'sell', description: '📉 보유 수량 일부 차감(매도)' },
+    { command: 'clear', description: '🗑️ 보유 자산 전량 매도 청산 처리' },
+    { command: 'check_manual', description: '📋 등록되어 활성화된 수동 자산 리스트 확인' },
+    { command: 'ai', description: '🤖 실시간 시장/뉴스/시세 기반 AI 투자 자문 리포트' },
+    { command: 'mode', description: '🔄 실제계좌 / 모의투자 감시 모드 전환' },
+    { command: 'run', description: '🔥 장마감 분석 워크플로우 즉각 수동 기동' },
+    { command: 'help', description: '📖 도움말 확인 & 실시간 대시보드 웹뷰 열기' }
+  ];
+  
+  var payload = {
+    commands: JSON.stringify(commands)
+  };
+  
+  try {
+    var response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    
+    var resCode = response.getResponseCode();
+    var resText = response.getContentText();
+    var resJson = JSON.parse(resText);
+    
+    logInfo_('telegram', 'Telegram setMyCommands API response', {
+      code: resCode,
+      ok: resJson.ok,
+      description: resJson.description || 'Success'
+    });
+    
+    return resJson;
+  } catch(err) {
+    logWarn_('telegram', 'Telegram setMyCommands API failed due to execution error', {
+      error: err.message || String(err)
+    });
+    return { ok: false, error: err.message };
+  }
+}
+

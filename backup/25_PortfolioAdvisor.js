@@ -25,51 +25,172 @@ function runAccountBalanceDiagnostics() {
 
 function collectHoldingsCurrent() {
   return withLogging_('portfolio_advisor', function() {
-    validateRealRuntimeConfig_();
     ensureAllSheets_();
+    try {
+      cleanDuplicateManualHoldings_();
+    } catch(e) {
+      logWarn_('portfolio_advisor', 'Failed to clean duplicate manual holdings', { error: e.message || String(e) });
+    }
     var today = amTodayString_();
-    var response = fetchKisDomesticAccountBalance_();
-    var normalized = normalizeKisAccountBalance_(response);
-    deleteRowsByDate_(AM_CONFIG.SHEETS.ACCOUNT_SNAPSHOT, today);
-    deleteRowsByDate_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, today);
-    appendObjectRow_(AM_CONFIG.SHEETS.ACCOUNT_SNAPSHOT, {
-      date: today,
-      cash_amount: normalized.snapshot.cash_amount,
-      stock_eval_amount: normalized.snapshot.stock_eval_amount,
-      total_eval_amount: normalized.snapshot.total_eval_amount,
-      purchase_amount: normalized.snapshot.purchase_amount,
-      profit_loss_amount: normalized.snapshot.profit_loss_amount,
-      profit_loss_pct: normalized.snapshot.profit_loss_pct,
-      raw_json: normalized.snapshot.raw,
-      created_at: amNowString_()
-    });
-    appendObjectRows_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, normalized.holdings);
-    var manualRows = appendManualHoldingsToCurrent_(today);
-    rewriteHoldingWeightsForDate_(today);
-    buildPortfolioRiskSnapshot_(today);
-    logInfo_('portfolio_advisor', 'Holdings collected', {
-      date: today,
-      holdings_count: normalized.holdings.length,
-      manual_holdings_count: manualRows.length
-    });
-    safeUiAlert_([
-      '보유종목 수집 완료',
-      '',
-      'KIS 보유종목 수: ' + normalized.holdings.length,
-      '수동 보유종목 수: ' + manualRows.length,
-      '총 평가금액: ' + formatNumber_(normalized.snapshot.total_eval_amount),
-      '주식 평가금액: ' + formatNumber_(normalized.snapshot.stock_eval_amount),
-      '',
-      '다음: 보유종목 어드바이스 생성을 실행하세요.'
-    ].join('\n'));
-    return normalized;
+    
+    // 포트폴리오 모드 확인 (REAL 또는 PAPER)
+    var portMode = String(getScriptProperty_('PORTFOLIO_MODE') || 'real').toLowerCase();
+    var isRealMode = (portMode === 'real');
+    
+    if (isRealMode) {
+      validateRealRuntimeConfig_();
+      var response = fetchKisDomesticAccountBalance_();
+      var normalized = normalizeKisAccountBalance_(response);
+      
+      deleteRowsByDate_(AM_CONFIG.SHEETS.ACCOUNT_SNAPSHOT, today);
+      deleteRowsByDate_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, today);
+      
+      appendObjectRow_(AM_CONFIG.SHEETS.ACCOUNT_SNAPSHOT, {
+        date: today,
+        cash_amount: normalized.snapshot.cash_amount,
+        stock_eval_amount: normalized.snapshot.stock_eval_amount,
+        total_eval_amount: normalized.snapshot.total_eval_amount,
+        purchase_amount: normalized.snapshot.purchase_amount,
+        profit_loss_amount: normalized.snapshot.profit_loss_amount,
+        profit_loss_pct: normalized.snapshot.profit_loss_pct,
+        raw_json: normalized.snapshot.raw,
+        created_at: amNowString_()
+      });
+      
+      appendObjectRows_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, normalized.holdings);
+      var manualRows = appendManualHoldingsToCurrent_(today);
+      
+      rewriteHoldingWeightsForDate_(today);
+      buildPortfolioRiskSnapshot_(today);
+      
+      logInfo_('portfolio_advisor', 'Holdings collected (REAL)', {
+        date: today,
+        holdings_count: normalized.holdings.length,
+        manual_holdings_count: manualRows.length
+      });
+      
+      safeUiAlert_([
+        '보유종목 수집 완료 (실제 계좌)',
+        '',
+        'KIS 보유종목 수: ' + normalized.holdings.length,
+        '수동 보유종목 수: ' + manualRows.length,
+        '총 평가금액: ' + formatNumber_(normalized.snapshot.total_eval_amount),
+        '주식 평가금액: ' + formatNumber_(normalized.snapshot.stock_eval_amount),
+        '',
+        '다음: 보유종목 어드바이스 생성을 실행하세요.'
+      ].join('\n'));
+      
+      return normalized;
+    } else {
+      // PAPER (모의투자) 모드 분기 처리
+      var latestRow = getLatestPaperPortfolioRow_();
+      var cash = 5000000;
+      var activePositions = [];
+      
+      if (latestRow) {
+        cash = Number(latestRow.cash_amount || 0);
+        try {
+          activePositions = JSON.parse(latestRow.active_positions_json || '[]');
+        } catch(e) {
+          activePositions = [];
+        }
+      } else {
+        // 백업용 초기 데이터가 없으면 settings 등에서 예산 조회
+        try {
+          cash = getStrategyNumber_('total_investment', 5000000);
+        } catch(e) {}
+      }
+      
+      deleteRowsByDate_(AM_CONFIG.SHEETS.ACCOUNT_SNAPSHOT, today);
+      deleteRowsByDate_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, today);
+      
+      var totalStockEval = activePositions.reduce(function(sum, p) {
+        return sum + Number(p.eval_amount || 0);
+      }, 0);
+      var totalEval = cash + totalStockEval;
+      
+      appendObjectRow_(AM_CONFIG.SHEETS.ACCOUNT_SNAPSHOT, {
+        date: today,
+        cash_amount: Math.round(cash),
+        stock_eval_amount: Math.round(totalStockEval),
+        total_eval_amount: Math.round(totalEval),
+        purchase_amount: Math.round(totalEval), // 모의투자는 purchase_amount가 유동적이므로 totalEval을 기재하거나 activePositions 합산
+        profit_loss_amount: 0,
+        profit_loss_pct: latestRow ? latestRow.cumulative_return_pct : 0,
+        raw_json: latestRow,
+        created_at: amNowString_()
+      });
+      
+      var paperHoldings = activePositions.map(function(p) {
+        var pAvg = Number(p.entry_price || p.avg_price || 0);
+        return {
+          date: today,
+          symbol: p.symbol,
+          name: p.name || p.symbol,
+          quantity: p.quantity,
+          avg_price: pAvg,
+          current_price: p.current_price,
+          purchase_amount: p.quantity * pAvg,
+          eval_amount: p.eval_amount,
+          profit_loss_amount: p.eval_amount - (p.quantity * pAvg),
+          profit_loss_pct: p.return_pct || 0,
+          portfolio_weight_pct: totalEval > 0 ? roundNumber_(p.eval_amount / totalEval * 100, 2) : 0,
+          source: 'paper_trading',
+          raw_json: p
+        };
+      });
+      
+      if (paperHoldings.length > 0) {
+        appendObjectRows_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, paperHoldings);
+      }
+      
+      rewriteHoldingWeightsForDate_(today);
+      buildPortfolioRiskSnapshot_(today);
+      
+      logInfo_('portfolio_advisor', 'Holdings collected (PAPER)', {
+        date: today,
+        holdings_count: paperHoldings.length
+      });
+      
+      safeUiAlert_([
+        '보유종목 수집 완료 (모의 투자)',
+        '',
+        '모의 보유종목 수: ' + paperHoldings.length,
+        '총 평가금액: ' + formatNumber_(totalEval),
+        '주식 평가금액: ' + formatNumber_(totalStockEval),
+        '',
+        '다음: 보유종목 어드바이스 생성을 실행하세요.'
+      ].join('\n'));
+      
+      return {
+        snapshot: {
+          cash_amount: cash,
+          stock_eval_amount: totalStockEval,
+          total_eval_amount: totalEval
+        },
+        holdings: paperHoldings
+      };
+    }
   });
 }
 
 function importManualHoldingsCurrent() {
   return withLogging_('portfolio_advisor', function() {
     ensureAllSheets_();
+    try {
+      cleanDuplicateManualHoldings_();
+    } catch(e) {
+      logWarn_('portfolio_advisor', 'Failed to clean duplicate manual holdings', { error: e.message || String(e) });
+    }
     var today = amTodayString_();
+    
+    // 모의투자 모드에서는 실행 차단
+    var portMode = String(getScriptProperty_('PORTFOLIO_MODE') || 'real').toLowerCase();
+    if (portMode !== 'real') {
+      safeUiAlert_('수동 보유종목 가져오기는 실제 계좌(REAL) 모드에서만 실행할 수 있습니다. 현재 모의투자(PAPER) 모드입니다.');
+      return [];
+    }
+    
     deleteRowsByDate_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, today);
     var manualRows = appendManualHoldingsToCurrent_(today);
     rewriteHoldingWeightsForDate_(today);
@@ -295,7 +416,7 @@ function normalizeManualHoldingRow_(today, row) {
   return {
     date: today,
     symbol: symbol,
-    name: row.name || symbol,
+    name: getStockKoreanName_(symbol, row.name),
     quantity: quantity,
     avg_price: avgPrice,
     current_price: currentPrice,
@@ -724,6 +845,80 @@ function getLatestUsdKrwRate_() {
     logWarn_('portfolio_advisor', 'Failed to read USD/KRW rate from macro_raw', { error: e.message });
   }
   return 1380; // 합리적인 기본 환율
+}
+
+/**
+ * manual_holdings 시트에서 동일한 증권사(표준 한글명) 및 종목코드에 대해
+ * 활성화된 수동 자산 중복 행을 찾아 가중평균 평단가 및 합산 수량으로 자동 병합하고
+ * 깨끗하게 정리(자가 치유)하는 전용 함수입니다.
+ */
+function cleanDuplicateManualHoldings_() {
+  var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
+  var sheet = ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
+  var rows = readObjects_(sheetName);
+  if (rows.length <= 1) return;
+  
+  var merged = {};
+  var needsRewrite = false;
+  
+  rows.forEach(function(row) {
+    var symbol = normalizeStockSymbol_(row.symbol);
+    if (!symbol) return;
+    
+    var broker = normalizeBrokerName_(row.broker);
+    var key = broker + '_' + symbol;
+    
+    var activeVal = String(row.active || 'Y').toUpperCase().trim();
+    var isActive = (activeVal !== 'N' && activeVal !== 'FALSE');
+    var qty = parseFloat(row.quantity || 0);
+    
+    if (!merged[key]) {
+      merged[key] = {
+        broker: broker,
+        symbol: symbol,
+        name: row.name,
+        quantity: qty,
+        avg_price: parseFloat(row.avg_price || 0),
+        active: isActive,
+        memo: row.memo || ''
+      };
+    } else {
+      needsRewrite = true;
+      if (isActive && qty > 0) {
+        var prev = merged[key];
+        if (prev.quantity > 0) {
+          var totalCost = (prev.quantity * prev.avg_price) + (qty * parseFloat(row.avg_price || 0));
+          var totalQty = prev.quantity + qty;
+          prev.quantity = totalQty;
+          prev.avg_price = totalQty > 0 ? Math.round(totalCost / totalQty) : 0;
+          prev.memo = '자동 병합 (' + amTodayString_() + ')';
+        } else {
+          prev.quantity = qty;
+          prev.avg_price = parseFloat(row.avg_price || 0);
+          prev.active = true;
+          prev.memo = row.memo || '';
+        }
+      }
+    }
+  });
+  
+  if (needsRewrite) {
+    clearDataRows_(sheetName);
+    Object.keys(merged).forEach(function(key) {
+      var item = merged[key];
+      appendObjectRow_(sheetName, {
+        broker: item.broker,
+        symbol: item.symbol,
+        name: getStockKoreanName_(item.symbol, item.name),
+        quantity: item.quantity,
+        avg_price: item.avg_price,
+        purchase_amount: item.quantity * item.avg_price,
+        active: item.active ? 'Y' : 'N',
+        memo: item.memo || '중복 병합 완료'
+      });
+    });
+    logInfo_('portfolio_advisor', 'Merged duplicate manual holdings successfully', {});
+  }
 }
 
 
