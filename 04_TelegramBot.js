@@ -1438,7 +1438,7 @@ function getPortfolioDataForWeb(forceRefresh) {
       // 야후 파이낸스 실제 일봉 종가 연동 (CASH가 아니고 코인이 아닐 때만)
       if (sym !== 'CASH' && !isCoin) {
         try {
-          var yahooData = calculate50DayMomentumAndRSI_(sym);
+          var yahooData = calculate50DayMomentumAndRSI_(sym, true);
           if (yahooData && yahooData.prices && yahooData.prices.length > 0) {
             var yPrices = yahooData.prices;
             var yLen = yPrices.length;

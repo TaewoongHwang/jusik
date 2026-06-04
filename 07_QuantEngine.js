@@ -268,7 +268,7 @@ function getVaaStrategySignal(forceRefresh) {
 /**
  * 💡 [보안 차단 우회] 야후 차트 API 일봉 데이터를 이용한 50일 모멘텀 자가 연산기
  */
-function calculate50DayMomentumAndRSI_(symbol) {
+function calculate50DayMomentumAndRSI_(symbol, onlyCache) {
   var cleanSymbol = normalizeStockSymbol_(symbol);
   
   // 🚀 이중 캐싱 키 정의 (모멘텀과 RSI를 함께 캐싱하여 중복 차트 조회를 0초화)
@@ -287,6 +287,20 @@ function calculate50DayMomentumAndRSI_(symbol) {
       return JSON.parse(propVal);
     }
   } catch(e) {}
+  
+  // 🚀 [병목 원천 방어] onlyCache 가 참인 경우 캐시가 없으면 API를 찌르지 않고 즉시 디폴트 반환
+  if (onlyCache === true) {
+    return {
+      momentum_pct: 0,
+      rsi: 50,
+      sma5: 0,
+      sma20: 0,
+      bollinger_upper: 0,
+      bollinger_lower: 0,
+      technical_signal: '캐시 없음',
+      prices: []
+    };
+  }
   
   var yahooSymbol = cleanSymbol;
   if (/^\d{6}$/.test(cleanSymbol)) {
