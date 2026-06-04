@@ -876,9 +876,20 @@ function clearAllManualHoldingsFromTelegram_() {
 // ==================================================
 
 function callGeminiStockAnalysis_(symbol) {
-  var apiKey = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_API_KEY);
   var cleanSymbol = normalizeStockSymbol_(symbol);
+  var cacheKey = 'GEMINI_STOCK_ANALYSIS_V2_' + cleanSymbol;
+  var cache = CacheService.getScriptCache();
   
+  // 4시간 메모리 캐시 적중 시 0.05초 즉시 반환
+  try {
+    var cached = cache.get(cacheKey);
+    if (cached) {
+      logInfo_('ai_stock_analysis', 'Loaded AI stock analysis from cache', { symbol: cleanSymbol });
+      return cached;
+    }
+  } catch(e) {}
+  
+  var apiKey = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_API_KEY);
   var quote = fetchKisCurrentPrice_(cleanSymbol);
   var name = getStockKoreanName_(cleanSymbol, quote.name);
 
@@ -930,6 +941,12 @@ function callGeminiStockAnalysis_(symbol) {
   
   var res = JSON.parse(response.getContentText());
   var replyText = res.candidates[0].content.parts[0].text;
+  
+  // 4시간 캐싱 기록
+  try {
+    cache.put(cacheKey, replyText, 14400);
+  } catch(ce) {}
+  
   return replyText;
 }
 
@@ -992,7 +1009,8 @@ function doGet(e) {
       'getVaaStrategySignal',
       'getQuantStockScoring',
       'updateQuantUniverseDatabase',
-      'runQuantPortfolioRebalancing'
+      'runQuantPortfolioRebalancing',
+      'callGeminiStockAnalysis_'
     ];
     
     if (allowedFunctions.indexOf(funcName) < 0) {
