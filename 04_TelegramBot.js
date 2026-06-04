@@ -1010,7 +1010,8 @@ function doGet(e) {
       'getQuantStockScoring',
       'updateQuantUniverseDatabase',
       'runQuantPortfolioRebalancing',
-      'callGeminiStockAnalysis_'
+      'callGeminiStockAnalysis_',
+      'getQuantLabDataForWeb'
     ];
     
     if (allowedFunctions.indexOf(funcName) < 0) {
