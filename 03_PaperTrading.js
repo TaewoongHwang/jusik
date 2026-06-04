@@ -706,18 +706,26 @@ function collectHoldingsCurrent(forceRefresh) {
   // 🚀 [신설] 퀀트 국내/해외 300만원 모의 투자 계좌 잔고 취합 루프 (REAL/PAPER 모드 무관하게 상시 기동)
   try {
     deleteHoldingsCurrentBySources_(today, ['paper_trading_dom', 'paper_trading_us']);
+    
+    var usdRate = 1350;
+    try {
+      var liveRate = getLiveUsdRate_();
+      if (liveRate > 500) usdRate = liveRate;
+    } catch(e) {}
+    
     ['DOM', 'US'].forEach(function(type) {
       var sheetName = (type === 'DOM') ? AM_CONFIG.SHEETS.PAPER_PORTFOLIO_DOM : AM_CONFIG.SHEETS.PAPER_PORTFOLIO_US;
       var rows = readObjects_(sheetName);
       var lastRecord = rows.length > 0 ? rows[rows.length - 1] : null;
       
       // 시드가 존재하지 않는 최초 기동 시점에만 300만 원 계좌 Seeding 강제 수행
+      var seedCash = (type === 'DOM') ? 3000000 : roundNumber_(3000000 / usdRate, 2);
       if (!lastRecord) {
         lastRecord = {
           date: today,
-          cash_amount: 3000000,
+          cash_amount: seedCash,
           stock_eval_amount: 0,
-          total_eval_amount: 3000000,
+          total_eval_amount: seedCash,
           cumulative_return_pct: 0,
           active_positions_json: '[]'
         };
@@ -729,6 +737,7 @@ function collectHoldingsCurrent(forceRefresh) {
       
       // 예수금 CASH 화
       if (cash > 0) {
+        var displayCash = (type === 'DOM') ? cash : cash * usdRate;
         appendObjectRow_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, {
           date: today,
           symbol: 'CASH',
@@ -736,13 +745,13 @@ function collectHoldingsCurrent(forceRefresh) {
           quantity: cash,
           avg_price: 1,
           current_price: 1,
-          purchase_amount: cash,
-          eval_amount: cash,
+          purchase_amount: displayCash,
+          eval_amount: displayCash,
           profit_loss_amount: 0,
           profit_loss_pct: 0,
           portfolio_weight_pct: 0,
           source: (type === 'DOM') ? 'paper_trading_dom' : 'paper_trading_us',
-          currency: 'KRW'
+          currency: (type === 'DOM') ? 'KRW' : 'USD'
         });
       }
       
@@ -772,12 +781,6 @@ function collectHoldingsCurrent(forceRefresh) {
           }
         } catch(priceErr) {}
         
-        var usdRate = 1350;
-        try {
-          var liveRate = getLiveUsdRate_();
-          if (liveRate > 500) usdRate = liveRate;
-        } catch(e) {}
-        
         var isUsAsset = /^[A-Za-z]/.test(p.symbol);
         var displayCur = isUsAsset ? (cur * usdRate) : cur;
         var displayAvg = isUsAsset ? (avg * usdRate) : avg;
@@ -790,8 +793,8 @@ function collectHoldingsCurrent(forceRefresh) {
           symbol: p.symbol,
           name: getStockKoreanName_(p.symbol, name),
           quantity: qty,
-          avg_price: displayAvg,
-          current_price: displayCur,
+          avg_price: avg,
+          current_price: cur,
           purchase_amount: purchaseAmt,
           eval_amount: evalAmt,
           profit_loss_amount: evalAmt - purchaseAmt,
@@ -799,7 +802,7 @@ function collectHoldingsCurrent(forceRefresh) {
           change_pct: changePct,
           portfolio_weight_pct: 0,
           source: (type === 'DOM') ? 'paper_trading_dom' : 'paper_trading_us',
-          currency: 'KRW'
+          currency: (type === 'DOM') ? 'KRW' : 'USD'
         });
       });
     });
@@ -1177,18 +1180,39 @@ function executeQuantPaperOrder_(type, symbol, actionType, qty, customPrice) {
   var slippageRate = 0.001;
   var executionPrice = currentPrice;
   if (actionType === 'BUY') {
-    executionPrice = Math.round(currentPrice * (1 + slippageRate));
+    executionPrice = currentPrice * (1 + slippageRate);
   } else if (actionType === 'SELL') {
-    executionPrice = Math.round(currentPrice * (1 - slippageRate));
+    executionPrice = currentPrice * (1 - slippageRate);
+  }
+  
+  if (type === 'DOM') {
+    executionPrice = Math.round(executionPrice);
+  } else {
+    executionPrice = roundNumber_(executionPrice, 2);
   }
   
   var amount = executionPrice * qty;
+  if (type === 'DOM') {
+    amount = Math.round(amount);
+  } else {
+    amount = roundNumber_(amount, 2);
+  }
   
   var rows = readObjects_(sheetName);
+  
+  // 최초 시드 금액 세팅 (US는 달러 환산)
+  var usdRate = 1350;
+  try {
+    var liveRate = getLiveUsdRate_();
+    if (liveRate > 500) usdRate = liveRate;
+  } catch(e) {}
+  
+  var seedCash = (type === 'DOM') ? 3000000 : roundNumber_(3000000 / usdRate, 2);
+  
   var lastRecord = rows.length > 0 ? rows[rows.length - 1] : {
-    cash_amount: 3000000,
+    cash_amount: seedCash,
     stock_eval_amount: 0,
-    total_eval_amount: 3000000,
+    total_eval_amount: seedCash,
     active_positions_json: '[]'
   };
   
@@ -1206,14 +1230,15 @@ function executeQuantPaperOrder_(type, symbol, actionType, qty, customPrice) {
   
   if (actionType === 'BUY') {
     if (cash < amount) {
-      throw new Error(type + ' 퀀트예수금 부족! 잔고: ' + formatNumber_(cash) + '원, 필요액: ' + formatNumber_(amount) + '원');
+      var currencySymbol = (type === 'DOM') ? '원' : '달러';
+      throw new Error(type + ' 퀀트예수금 부족! 잔고: ' + formatNumber_(cash) + currencySymbol + ', 필요액: ' + formatNumber_(amount) + currencySymbol);
     }
     cash -= amount;
     if (found >= 0) {
       var p = activePositions[found];
       var totalCost = (p.quantity * p.entry_price) + amount;
       p.quantity += qty;
-      p.entry_price = Math.round(totalCost / p.quantity);
+      p.entry_price = (type === 'DOM') ? Math.round(totalCost / p.quantity) : roundNumber_(totalCost / p.quantity, 4);
       p.eval_amount = p.quantity * executionPrice;
     } else {
       activePositions.push({
@@ -1237,15 +1262,33 @@ function executeQuantPaperOrder_(type, symbol, actionType, qty, customPrice) {
     }
   }
   
+  if (type === 'DOM') {
+    activePositions.forEach(function(item) { item.eval_amount = Math.round(item.eval_amount); });
+  } else {
+    activePositions.forEach(function(item) { item.eval_amount = roundNumber_(item.eval_amount, 2); });
+  }
+  
   var stockEval = activePositions.reduce(function(sum, item) { return sum + item.eval_amount; }, 0);
   var total = cash + stockEval;
   
+  if (type === 'DOM') {
+    cash = Math.round(cash);
+    stockEval = Math.round(stockEval);
+    total = Math.round(total);
+  } else {
+    cash = roundNumber_(cash, 2);
+    stockEval = roundNumber_(stockEval, 2);
+    total = roundNumber_(total, 2);
+  }
+  
+  var cumulativeReturn = ((total - seedCash) / seedCash) * 100;
+  
   var newRecord = {
     date: today,
-    cash_amount: Math.round(cash),
-    stock_eval_amount: Math.round(stockEval),
-    total_eval_amount: Math.round(total),
-    cumulative_return_pct: roundNumber_(((total - 3000000) / 3000000) * 100, 2),
+    cash_amount: cash,
+    stock_eval_amount: stockEval,
+    total_eval_amount: total,
+    cumulative_return_pct: roundNumber_(cumulativeReturn, 2),
     active_positions_json: JSON.stringify(activePositions)
   };
   
