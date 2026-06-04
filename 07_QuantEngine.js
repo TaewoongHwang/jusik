@@ -272,7 +272,7 @@ function calculate50DayMomentumAndRSI_(symbol) {
   var cleanSymbol = normalizeStockSymbol_(symbol);
   
   // 🚀 이중 캐싱 키 정의 (모멘텀과 RSI를 함께 캐싱하여 중복 차트 조회를 0초화)
-  var cacheKey = 'QUANT_IND_' + cleanSymbol;
+  var cacheKey = 'QUANT_IND_V2_' + cleanSymbol;
   try {
     var cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) {
@@ -293,7 +293,7 @@ function calculate50DayMomentumAndRSI_(symbol) {
     yahooSymbol = cleanSymbol + '.KS';
   }
   
-  var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(yahooSymbol) + '?interval=1d&range=3mo';
+  var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(yahooSymbol) + '?interval=1d&range=1y';
   var resultData = {
     momentum_pct: 0,
     rsi: 50,
