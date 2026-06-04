@@ -134,6 +134,14 @@ function getKisAccountConfig_() {
     }
   }
   
+  // 🚀 [자율 상품코드 정규화] 스프레드시트 서식 문제로 앞자리 "0" 이 증발한 경우 (예: "1" 이나 "3") 자동 패딩 보완
+  if (accountProductCode && String(accountProductCode).length === 1) {
+    accountProductCode = '0' + accountProductCode;
+  }
+  if (isaProductCode && String(isaProductCode).length === 1) {
+    isaProductCode = '0' + isaProductCode;
+  }
+  
   return {
     cano: cano,
     accountProductCode: accountProductCode,
