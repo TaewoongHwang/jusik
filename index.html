@@ -1728,7 +1728,8 @@
             getStockNewsForWeb: function(force) { this._callApi('getStockNewsForWeb', [force]); },
             getAiPortfolioAdviceForWeb: function(force) { this._callApi('getAiPortfolioAdviceForWeb', [force]); },
             getVaaStrategySignal: function() { this._callApi('getVaaStrategySignal', []); },
-            getQuantStockScoring: function() { this._callApi('getQuantStockScoring', []); }
+            getQuantStockScoring: function() { this._callApi('getQuantStockScoring', []); },
+            callGeminiStockAnalysis_: function(symbol) { this._callApi('callGeminiStockAnalysis_', [symbol]); }
           }
         }
       };
