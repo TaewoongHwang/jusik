@@ -354,6 +354,23 @@ try {
     throw new Error('Technical indicators unit test failed! Obtained: ' + JSON.stringify(techInd));
   }
 
+  // [단위테스트 8] 계좌번호 및 상품코드 스마트 정제 엔진 검증
+  const testCases = [
+    { cano: "12345678-03", prdt: "", expectedCano: "12345678", expectedPrdt: "03" },
+    { cano: "1234567803", prdt: "", expectedCano: "12345678", expectedPrdt: "03" },
+    { cano: "12345678", prdt: "3", expectedCano: "12345678", expectedPrdt: "03" },
+    { cano: " 12345678 - 03 \n", prdt: "03", expectedCano: "12345678", expectedPrdt: "03" },
+    { cano: "12345678", prdt: "03", expectedCano: "12345678", expectedPrdt: "03" }
+  ];
+  
+  testCases.forEach((tc, index) => {
+    const res = sandbox.cleanAndExtractKisAccount_(tc.cano, tc.prdt);
+    if (res.cano !== tc.expectedCano || res.productCode !== tc.expectedPrdt) {
+      throw new Error(`Sanitization Unit Test failed at case ${index + 1}: input(${tc.cano}, ${tc.prdt}) -> expected(${tc.expectedCano}, ${tc.expectedPrdt}) but got(${res.cano}, ${res.productCode})`);
+    }
+  });
+  console.log("   [PASS] [단위테스트 8] 계좌번호 및 상품코드 스마트 정제 엔진(Sanitizer) 검증 완료");
+
   console.log("\x1b[32m✅ [합격] 모든 핵심 로직 유닛 테스트가 100% 정상 작동합니다!\x1b[0m");
 } catch (ex) {
   console.error("\x1b[31m❌ [유닛 테스트 실패] 동적 테스트 검증 중 오류가 감지되었습니다!\x1b[0m");

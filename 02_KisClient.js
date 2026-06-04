@@ -94,6 +94,56 @@ function getKisAccessToken_() {
   return res.access_token;
 }
 
+/**
+ * 🚀 [신설] 계좌번호와 상품코드의 유해 공백/하이픈 제거 및 스마트 10자리/하이픈 자동 분할 정제기
+ */
+function cleanAndExtractKisAccount_(canoVal, prdtCdVal) {
+  var rawCano = String(canoVal || '').trim();
+  var rawPrdt = String(prdtCdVal || '').trim();
+  
+  // 보이지 않는 제로너비 공백 및 특수 공백 소거
+  var cleaningRegex = /[\u200B-\u200D\uFEFF\u00A0\u1680\u180E\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\s]/g;
+  rawCano = rawCano.replace(cleaningRegex, '');
+  rawPrdt = rawPrdt.replace(cleaningRegex, '');
+
+  var cleanCano = '';
+  var cleanPrdt = rawPrdt;
+  
+  if (rawCano) {
+    // 1. 하이픈 기준 분할 시도 (예: "12345678-03" -> ["12345678", "03"])
+    var parts = rawCano.split('-');
+    if (parts.length > 1) {
+      cleanCano = parts[0].replace(/[^0-9]/g, '');
+      if (!cleanPrdt) {
+        cleanPrdt = parts[1].replace(/[^0-9]/g, '');
+      }
+    } else {
+      // 2. 숫자가 아닌 모든 문자 제거
+      var digits = rawCano.replace(/[^0-9]/g, '');
+      if (digits.length === 10) {
+        // 10자리인 경우 8자리 계좌번호 + 2자리 상품코드로 자동 분할
+        cleanCano = digits.substring(0, 8);
+        if (!cleanPrdt) {
+          cleanPrdt = digits.substring(8, 10);
+        }
+      } else {
+        cleanCano = digits;
+      }
+    }
+  }
+  
+  // 상품코드 정화 및 자릿수 맞춤
+  cleanPrdt = cleanPrdt.replace(/[^0-9]/g, '');
+  if (cleanPrdt.length === 1) {
+    cleanPrdt = '0' + cleanPrdt;
+  }
+  
+  return {
+    cano: cleanCano.substring(0, 8),
+    productCode: cleanPrdt.substring(0, 2)
+  };
+}
+
 function getKisAccountConfig_() {
   var service = PropertiesService.getScriptProperties();
   var cano = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_CANO) || '';
@@ -134,19 +184,25 @@ function getKisAccountConfig_() {
     }
   }
   
-  // 🚀 [자율 상품코드 정규화] 스프레드시트 서식 문제로 앞자리 "0" 이 증발한 경우 (예: "1" 이나 "3") 자동 패딩 보완
-  if (accountProductCode && String(accountProductCode).length === 1) {
-    accountProductCode = '0' + accountProductCode;
-  }
-  if (isaProductCode && String(isaProductCode).length === 1) {
-    isaProductCode = '0' + isaProductCode;
-  }
+  // 🚀 [강화된 계좌번호 및 상품코드 스마트 정제 및 추출]
+  var cleanNormal = cleanAndExtractKisAccount_(cano, accountProductCode);
+  var cleanIsa = cleanAndExtractKisAccount_(isaCano, isaProductCode);
+  
+  // 원격 추적성을 위한 안전 마스킹 로깅 (앞 4자리 노출)
+  var debugNormalCano = cleanNormal.cano ? (cleanNormal.cano.substring(0, 4) + '****') : 'MISSING';
+  var debugIsaCano = cleanIsa.cano ? (cleanIsa.cano.substring(0, 4) + '****') : 'MISSING';
+  logInfo_('kis_client', 'Resolved sanitized KIS account configuration', {
+    cano: debugNormalCano,
+    productCode: cleanNormal.productCode,
+    isaCano: debugIsaCano,
+    isaProductCode: cleanIsa.productCode
+  });
   
   return {
-    cano: cano,
-    accountProductCode: accountProductCode,
-    isaCano: isaCano,
-    isaProductCode: isaProductCode
+    cano: cleanNormal.cano,
+    accountProductCode: cleanNormal.productCode || '01',
+    isaCano: cleanIsa.cano,
+    isaProductCode: cleanIsa.productCode
   };
 }
 
