@@ -303,11 +303,13 @@ function calculate50DayMomentumAndRSI_(symbol, onlyCache) {
   }
   
   var yahooSymbol = cleanSymbol;
-  if (/^\d{6}$/.test(cleanSymbol)) {
-    yahooSymbol = cleanSymbol + '.KS';
-  }
+  var isKoreanStock = /^\d[0-9A-Z]{5}$/.test(cleanSymbol);
   
   var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(yahooSymbol) + '?interval=1d&range=1y';
+  if (isKoreanStock) {
+    url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(cleanSymbol + '.KS') + '?interval=1d&range=1y';
+  }
+  
   var resultData = {
     momentum_pct: 0,
     rsi: 50,
@@ -326,6 +328,18 @@ function calculate50DayMomentumAndRSI_(symbol, onlyCache) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
+    
+    // 코스피(.KS) 시도 실패 시 코스닥(.KQ)으로 스마트 2차 폴백 스캔 기동
+    if (isKoreanStock && response.getResponseCode() !== 200) {
+      logInfo_('quant_engine', 'Retrying with .KQ suffix for ' + cleanSymbol);
+      var kqUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(cleanSymbol + '.KQ') + '?interval=1d&range=1y';
+      response = UrlFetchApp.fetch(kqUrl, {
+        muteHttpExceptions: true,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+    }
     
     if (response.getResponseCode() === 200) {
       var obj = JSON.parse(response.getContentText('UTF-8'));
