@@ -249,9 +249,9 @@ function doPost(e) {
           
           var src = String(row.source || '').trim();
           if (portMode === 'PAPER') {
-            return (src === 'paper_trading' || src === 'paper_trading_dom' || src === 'paper_trading_us');
+            return (src.indexOf('paper_') === 0);
           } else {
-            return (src === 'kis' || src.indexOf('manual_') === 0);
+            return (src.indexOf('kis') === 0 || src.indexOf('manual_') === 0 || src === 'overseas');
           }
         });
         
@@ -1317,9 +1317,9 @@ function getPortfolioDataForWeb(forceRefresh) {
     
     var src = String(row.source || '').trim();
     if (currentMode === 'PAPER') {
-      return (src === 'paper_trading' || src === 'paper_trading_dom' || src === 'paper_trading_us');
+      return (src.indexOf('paper_') === 0);
     } else {
-      return (src === 'kis' || src.indexOf('manual_') === 0);
+      return (src.indexOf('kis') === 0 || src.indexOf('manual_') === 0 || src === 'overseas');
     }
   });
   
