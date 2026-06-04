@@ -289,62 +289,127 @@ function collectHoldingsCurrent(forceRefresh) {
       var isSameAccount = (targetIsaCano === account.cano && targetIsaProductCode === account.accountProductCode);
       
       if (targetIsaCano && targetIsaProductCode && !isSameAccount) {
+        var isaResponse = null;
+        var finalUsedProductCode = targetIsaProductCode;
+        
         try {
-          var isaResponse = fetchKisDomesticAccountBalance_(targetIsaCano, targetIsaProductCode);
-          var normalizedIsa = normalizeKisAccountBalance_(isaResponse, 'kis_isa_balance');
-          normalizedIsa.holdings.forEach(function(h) {
-            // 중복 종목 처리 (위탁계좌와 ISA계좌에 동일 종목이 존재할 경우 가중평균 병합)
-            var duplicate = assets.filter(function(a) { return a.symbol === h.symbol && a.symbol !== 'CASH'; });
-            if (duplicate.length > 0) {
-              var prev = duplicate[0];
-              var totalQty = prev.quantity + h.quantity;
-              var totalCost = (prev.quantity * prev.avg_price) + (h.quantity * h.avg_price);
-              prev.quantity = totalQty;
-              prev.avg_price = totalQty > 0 ? Math.round(totalCost / totalQty) : 0;
-              prev.purchase_amount = prev.avg_price * prev.quantity;
-              prev.eval_amount = prev.current_price * prev.quantity;
-              prev.profit_loss_amount = prev.eval_amount - prev.purchase_amount;
-              prev.profit_loss_pct = prev.purchase_amount > 0 ? (prev.profit_loss_amount / prev.purchase_amount * 100) : 0;
-              prev.source = 'kis_composite'; // 복합 계좌 보유 표시
-            } else {
-              assets.push(h);
-            }
-            totalPurchase += h.purchase_amount;
-            totalEval += h.eval_amount;
-          });
-          
-          // ISA 예수금 가산
-          var isaCash = normalizedIsa.snapshot.cash_amount || 0;
-          if (isaCash > 0) {
-            totalPurchase += isaCash;
-            totalEval += isaCash;
-            var existingCash = assets.filter(function(x) { return x.symbol === 'CASH' && x.source === 'kis_cash'; });
-            if (existingCash.length > 0) {
-              existingCash[0].quantity += isaCash;
-              existingCash[0].purchase_amount += isaCash;
-              existingCash[0].eval_amount += isaCash;
-              existingCash[0].name = '예수금 (위탁/ISA)';
-            } else {
-              assets.push({
-                date: today,
-                symbol: 'CASH',
-                name: '예수금 (ISA계좌)',
-                quantity: isaCash,
-                avg_price: 1,
-                current_price: 1,
-                purchase_amount: isaCash,
-                eval_amount: isaCash,
-                profit_loss_amount: 0,
-                profit_loss_pct: 0,
-                portfolio_weight_pct: 0,
-                source: 'kis_cash',
-                currency: 'KRW'
-              });
-            }
-          }
-          logInfo_('portfolio_collector', 'Successfully fetched KIS ISA account balance', { count: normalizedIsa.holdings.length });
+          isaResponse = fetchKisDomesticAccountBalance_(targetIsaCano, targetIsaProductCode);
         } catch(isaErr) {
-          logWarn_('portfolio_collector', 'Failed to fetch KIS ISA balance', { error: isaErr.message });
+          // 🚀 [자율 상품코드 스마트 스캔 엔진 기동]
+          // 만약 상품코드 오류(OPSQ2000 등)로 실패 시, 대표적인 다른 상품코드들로 자동 우회 스캔 집행
+          var errStr = String(isaErr.message || '');
+          if (errStr.indexOf('OPSQ2000') >= 0 || errStr.indexOf('INVALID_CHECK_ACNO') >= 0 || errStr.indexOf('INPUT INVALID') >= 0) {
+            logWarn_('portfolio_collector', 'KIS ISA balance fetch failed with account check error. Launching auto-scan for product codes...', {
+              attempted_code: targetIsaProductCode,
+              error: errStr
+            });
+            
+            // ISA 계좌에 유효한 대표 상품코드 후보군
+            var candidates = ['03', '02', '06', '01'];
+            var scanSuccess = false;
+            
+            for (var cIdx = 0; cIdx < candidates.length; cIdx++) {
+              var candidate = candidates[cIdx];
+              if (candidate === targetIsaProductCode) continue; // 이미 실패한 코드는 건너뜀
+              
+              try {
+                logInfo_('portfolio_collector', 'Scanning alternative KIS ISA product code candidate...', { candidate: candidate });
+                var tempRes = fetchKisDomesticAccountBalance_(targetIsaCano, candidate);
+                
+                // 만약 에러 없이 정상 응답이 오면 스캔 대성공!
+                if (tempRes && tempRes.rt_cd !== undefined && String(tempRes.rt_cd) === '0') {
+                  isaResponse = tempRes;
+                  finalUsedProductCode = candidate;
+                  scanSuccess = true;
+                  
+                  // 스크립트 속성에 올바른 상품코드로 영구 자가 교정 및 업데이트
+                  try {
+                    PropertiesService.getScriptProperties().setProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_ACNT_PRDT_CD, candidate);
+                    logInfo_('portfolio_collector', 'Successfully auto-corrected and updated KIS ISA product code to Properties', {
+                      previous_code: targetIsaProductCode,
+                      corrected_code: candidate
+                    });
+                  } catch(propErr) {}
+                  
+                  break;
+                }
+              } catch(scanErr) {
+                // 다른 후보들도 실패하면 무시하고 다음 후보 진행
+                logWarn_('portfolio_collector', 'Alternative candidate scan failed', { candidate: candidate, error: scanErr.message });
+              }
+            }
+            
+            if (!scanSuccess) {
+              // 스캔마저도 모두 실패했다면 원래 발생한 에러를 재발생시켜 최종 fallback 처리
+              throw isaErr;
+            }
+          } else {
+            // 다른 에러(네트워크, 인증 등)면 그대로 상위 throw
+            throw isaErr;
+          }
+        }
+        
+        // 정상 응답을 받았을 경우 병합 로직 진행
+        if (isaResponse) {
+          try {
+            var normalizedIsa = normalizeKisAccountBalance_(isaResponse, 'kis_isa_balance');
+            normalizedIsa.holdings.forEach(function(h) {
+              // 중복 종목 처리 (위탁계좌와 ISA계좌에 동일 종목이 존재할 경우 가중평균 병합)
+              var duplicate = assets.filter(function(a) { return a.symbol === h.symbol && a.symbol !== 'CASH'; });
+              if (duplicate.length > 0) {
+                var prev = duplicate[0];
+                var totalQty = prev.quantity + h.quantity;
+                var totalCost = (prev.quantity * prev.avg_price) + (h.quantity * h.avg_price);
+                prev.quantity = totalQty;
+                prev.avg_price = totalQty > 0 ? Math.round(totalCost / totalQty) : 0;
+                prev.purchase_amount = prev.avg_price * prev.quantity;
+                prev.eval_amount = prev.current_price * prev.quantity;
+                prev.profit_loss_amount = prev.eval_amount - prev.purchase_amount;
+                prev.profit_loss_pct = prev.purchase_amount > 0 ? (prev.profit_loss_amount / prev.purchase_amount * 100) : 0;
+                prev.source = 'kis_composite'; // 복합 계좌 보유 표시
+              } else {
+                assets.push(h);
+              }
+              totalPurchase += h.purchase_amount;
+              totalEval += h.eval_amount;
+            });
+            
+            // ISA 예수금 가산
+            var isaCash = normalizedIsa.snapshot.cash_amount || 0;
+            if (isaCash > 0) {
+              totalPurchase += isaCash;
+              totalEval += isaCash;
+              var existingCash = assets.filter(function(x) { return x.symbol === 'CASH' && x.source === 'kis_cash'; });
+              if (existingCash.length > 0) {
+                existingCash[0].quantity += isaCash;
+                existingCash[0].purchase_amount += isaCash;
+                existingCash[0].eval_amount += isaCash;
+                existingCash[0].name = '예수금 (위탁/ISA)';
+              } else {
+                assets.push({
+                  date: today,
+                  symbol: 'CASH',
+                  name: '예수금 (ISA계좌)',
+                  quantity: isaCash,
+                  avg_price: 1,
+                  current_price: 1,
+                  purchase_amount: isaCash,
+                  eval_amount: isaCash,
+                  profit_loss_amount: 0,
+                  profit_loss_pct: 0,
+                  portfolio_weight_pct: 0,
+                  source: 'kis_cash',
+                  currency: 'KRW'
+                });
+              }
+            }
+            logInfo_('portfolio_collector', 'Successfully fetched KIS ISA account balance', {
+              count: normalizedIsa.holdings.length,
+              used_product_code: finalUsedProductCode
+            });
+          } catch(parseErr) {
+            logWarn_('portfolio_collector', 'Failed to parse normal KIS ISA balance response', { error: parseErr.message });
+          }
         }
       }
       
