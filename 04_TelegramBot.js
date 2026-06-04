@@ -1435,6 +1435,39 @@ function getPortfolioDataForWeb(forceRefresh) {
       var hist1M = priceHistoryMap1M[sym] || [];
       var hist1Y = priceHistoryMap1Y[sym] || [];
       
+      // 야후 파이낸스 실제 일봉 종가 연동 (CASH가 아니고 코인이 아닐 때만)
+      if (sym !== 'CASH' && !isCoin) {
+        try {
+          var yahooData = calculate50DayMomentumAndRSI_(sym);
+          if (yahooData && yahooData.prices && yahooData.prices.length > 0) {
+            var yPrices = yahooData.prices;
+            
+            // 7D: 마지막 7영업일 가격 데이터
+            var yHist7D = yPrices.length > 7 ? yPrices.slice(yPrices.length - 7) : yPrices.slice();
+            if (yHist7D.length > 0) {
+              yHist7D[yHist7D.length - 1] = cur;
+            }
+            hist = yHist7D;
+            
+            // 1M: 마지막 30영업일 가격 데이터
+            var yHist1M = yPrices.length > 30 ? yPrices.slice(yPrices.length - 30) : yPrices.slice();
+            if (yHist1M.length > 0) {
+              yHist1M[yHist1M.length - 1] = cur;
+            }
+            hist1M = yHist1M;
+            
+            // 1Y: 전체 데이터 (야후에서 3개월치 일봉을 가져옴)
+            var yHist1Y = yPrices.slice();
+            if (yHist1Y.length > 0) {
+              yHist1Y[yHist1Y.length - 1] = cur;
+            }
+            hist1Y = yHist1Y;
+          }
+        } catch (yahooErr) {
+          logWarn_('portfolio_api', 'Yahoo chart mapping failed for ' + sym + '. Falling back.', { error: yahooErr.message });
+        }
+      }
+      
       // 랜덤 시드 및 해시 함수 (일관된 시뮬레이션을 위함)
       var hashVal = 0;
       for (var charIdx = 0; charIdx < h.symbol.length; charIdx++) {

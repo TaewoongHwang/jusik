@@ -301,7 +301,8 @@ function calculate50DayMomentumAndRSI_(symbol) {
     sma20: 0,
     bollinger_upper: 0,
     bollinger_lower: 0,
-    technical_signal: '특이 신호 없음'
+    technical_signal: '특이 신호 없음',
+    prices: []
   }; // 기본 디폴트 데이터
   
   try {
@@ -447,6 +448,7 @@ function calculate50DayMomentumAndRSI_(symbol) {
         resultData.bollinger_upper = bollUpper > 0 ? Math.round(bollUpper) : 0;
         resultData.bollinger_lower = bollLower > 0 ? Math.round(bollLower) : 0;
         resultData.technical_signal = techSignals.length > 0 ? techSignals.join(', ') : "특이 신호 없음";
+        resultData.prices = cleanClose || [];
       }
     }
   } catch(e) {
