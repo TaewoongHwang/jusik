@@ -1487,7 +1487,7 @@ function getPortfolioDataForWeb(forceRefresh) {
       var rndSeed = Math.sin(hashVal || 123);
       
       // 1. 7D 시뮬레이션 보강
-      if (hist.length < 5) {
+      if (hist.length < 2) {
         var simulated = [];
         for (var s = 0; s < 5; s++) {
           var multiplier = 1 + (Math.sin(s + rndSeed) * 0.015);
@@ -1498,7 +1498,7 @@ function getPortfolioDataForWeb(forceRefresh) {
       }
       
       // 2. 1M 시뮬레이션 보강
-      if (hist1M.length < 15) {
+      if (hist1M.length < 2) {
         var simulated1M = [];
         for (var s1 = 0; s1 < 20; s1++) {
           var multiplier1M = 1 + (Math.sin(s1 * 1.5 + rndSeed) * 0.04); // 한 달 변동성 확대
@@ -1509,7 +1509,7 @@ function getPortfolioDataForWeb(forceRefresh) {
       }
       
       // 3. 1Y 시뮬레이션 보강
-      if (hist1Y.length < 50) {
+      if (hist1Y.length < 2) {
         var simulated1Y = [];
         for (var s2 = 0; s2 < 45; s2++) {
           var multiplier1Y = 1 + (Math.sin(s2 * 3.7 + rndSeed) * 0.12); // 일 년 변동성 확대
