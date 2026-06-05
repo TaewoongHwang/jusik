@@ -1,7 +1,12 @@
-function kisGet_(path, params, trId) {
+function kisGet_(path, params, trId, customAuth) {
   var baseUrl = String(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_BASE_URL, AM_CONFIG.DEFAULT_KIS_BASE_URL)).trim();
   var appKey = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_KEY, ''));
   var appSecret = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_SECRET, ''));
+  
+  if (customAuth && customAuth.appKey && customAuth.appSecret) {
+    appKey = sanitizeKey_(customAuth.appKey);
+    appSecret = sanitizeKey_(customAuth.appSecret);
+  }
   
   if (!appKey || !appSecret) {
     throw new Error('KIS_APP_KEY or KIS_APP_SECRET is missing. Please configure them.');
@@ -14,7 +19,7 @@ function kisGet_(path, params, trId) {
     method: 'get',
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      authorization: 'Bearer ' + getKisAccessToken_(),
+      authorization: 'Bearer ' + getKisAccessToken_(customAuth),
       appkey: appKey,
       appsecret: appSecret,
       tr_id: trId
@@ -42,9 +47,19 @@ function apiFetchJson_(url, options) {
   return json;
 }
 
-function getKisAccessToken_() {
-  var propKey = AM_CONFIG.PROPERTY_KEYS.KIS_ACCESS_TOKEN;
-  var propExpiryKey = AM_CONFIG.PROPERTY_KEYS.KIS_ACCESS_TOKEN_EXPIRES_AT;
+function getKisAccessToken_(customAuth) {
+  var appKey = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_KEY, ''));
+  var appSecret = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_SECRET, ''));
+  
+  if (customAuth && customAuth.appKey && customAuth.appSecret) {
+    appKey = sanitizeKey_(customAuth.appKey);
+    appSecret = sanitizeKey_(customAuth.appSecret);
+  }
+  
+  // AppKey 별로 고유한 프로퍼티 캐시 키 생성 (뒤 6자리만 섞음)
+  var keyHash = appKey ? appKey.substring(Math.max(0, appKey.length - 6)) : 'default';
+  var propKey = AM_CONFIG.PROPERTY_KEYS.KIS_ACCESS_TOKEN + '_' + keyHash;
+  var propExpiryKey = AM_CONFIG.PROPERTY_KEYS.KIS_ACCESS_TOKEN_EXPIRES_AT + '_' + keyHash;
   
   var token = getScriptProperty_(propKey, null);
   var expiresAt = Number(getScriptProperty_(propExpiryKey, 0));
@@ -56,8 +71,6 @@ function getKisAccessToken_() {
   
   // 신규 토큰 발급
   var baseUrl = String(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_BASE_URL, AM_CONFIG.DEFAULT_KIS_BASE_URL)).trim();
-  var appKey = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_KEY, ''));
-  var appSecret = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_SECRET, ''));
   
   if (!appKey || !appSecret) {
     throw new Error('KIS_APP_KEY or KIS_APP_SECRET is missing for access token.');
@@ -90,7 +103,7 @@ function getKisAccessToken_() {
   var expiry = new Date().getTime() + (Number(res.expires_in || 7200) * 1000);
   setScriptProperty_(propExpiryKey, expiry);
   
-  logInfo_('kis_auth', 'Generated new KIS access token', { expires_at: new Date(expiry).toLocaleString() });
+  logInfo_('kis_auth', 'Generated new KIS access token for appkey suffix ' + keyHash, { expires_at: new Date(expiry).toLocaleString() });
   return res.access_token;
 }
 
@@ -150,6 +163,8 @@ function getKisAccountConfig_() {
   var accountProductCode = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ACNT_PRDT_CD) || '01';
   var isaCano = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_CANO) || '';
   var isaProductCode = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_ACNT_PRDT_CD) || '';
+  var isaAppKey = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_APP_KEY) || '';
+  var isaAppSecret = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_APP_SECRET) || '';
   
   // 🚀 [자율 동기화 세이프 가드] 만약 Properties 에 ISA 정보가 비어있다면 settings 시트에서 즉시 자동 룩업 동기화
   if (!isaCano || !isaProductCode) {
@@ -169,6 +184,16 @@ function getKisAccountConfig_() {
           }
           if (key === 'KIS_ISA_ACNT_PRDT_CD' && !isaProductCode) {
             isaProductCode = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+          if (key === 'KIS_ISA_APP_KEY' && !isaAppKey) {
+            isaAppKey = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+          if (key === 'KIS_ISA_APP_SECRET' && !isaAppSecret) {
+            isaAppSecret = val;
             sheetProps[key] = val;
             hasUpdates = true;
           }
@@ -202,7 +227,9 @@ function getKisAccountConfig_() {
     cano: cleanNormal.cano,
     accountProductCode: cleanNormal.productCode || '01',
     isaCano: cleanIsa.cano,
-    isaProductCode: cleanIsa.productCode
+    isaProductCode: cleanIsa.productCode,
+    isaAppKey: sanitizeKey_(isaAppKey),
+    isaAppSecret: sanitizeKey_(isaAppSecret)
   };
 }
 

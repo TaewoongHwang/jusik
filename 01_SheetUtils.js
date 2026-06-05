@@ -628,6 +628,8 @@ function syncPropertiesFromSheet() {
     { key: 'KIS_CANO', desc: '한국투자증권 실제 계좌번호 8자리 숫자' },
     { key: 'KIS_ISA_CANO', desc: '한국투자증권 ISA 계좌번호 8자리 (일반계좌와 같으면 공란)' },
     { key: 'KIS_ISA_ACNT_PRDT_CD', desc: '한국투자증권 ISA 상품코드 2자리 (보통 03)' },
+    { key: 'KIS_ISA_APP_KEY', desc: '한국투자증권 ISA 전용 AppKey (일반계좌와 같으면 공란)' },
+    { key: 'KIS_ISA_APP_SECRET', desc: '한국투자증권 ISA 전용 AppSecret (일반계좌와 같으면 공란)' },
     { key: 'DART_API_KEY', desc: '국민연금/DART 기업 공시 분석 API Key' },
     { key: 'ECOS_API_KEY', desc: '한국은행 경제통계시스템 ECOS API Key' },
     { key: 'FRED_API_KEY', desc: '미국 세인트루이스 연준 거시경제 FRED API Key' },
@@ -766,7 +768,7 @@ function backupPropertiesToSheet() {
   var finalRows = [];
   
   // 💡 [보안 마스킹 강제 집행] 극비 자격증명은 시트에 평문 노출을 방지하기 위해 마스킹
-  var sensitiveKeys = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_ACCESS_TOKEN', 'GEMINI_API_KEY', 'TELEGRAM_BOT_TOKEN'];
+  var sensitiveKeys = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_ACCESS_TOKEN', 'GEMINI_API_KEY', 'TELEGRAM_BOT_TOKEN', 'KIS_ISA_APP_KEY', 'KIS_ISA_APP_SECRET'];
   
   // 1. 기존 시트에 있던 키들을 먼저 백업값 기준으로 최신화하여 순서 유지
   currentRows.forEach(function(row) {

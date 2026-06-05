@@ -1,4 +1,4 @@
-function fetchKisDomesticAccountBalance_(cano, productCode) {
+function fetchKisDomesticAccountBalance_(cano, productCode, customAuth) {
   var account = getKisAccountConfig_();
   var targetCano = cano || account.cano;
   var targetProductCode = productCode || account.accountProductCode;
@@ -19,7 +19,7 @@ function fetchKisDomesticAccountBalance_(cano, productCode) {
     PRCS_DVSN: '01',
     CTX_AREA_FK100: '',
     CTX_AREA_NK100: ''
-  }, 'TTTC8434R');
+  }, 'TTTC8434R', customAuth);
 }
 
 function normalizeKisAccountBalance_(response, customSource) {
@@ -291,9 +291,13 @@ function collectHoldingsCurrent(forceRefresh) {
       if (targetIsaCano && targetIsaProductCode && !isSameAccount) {
         var isaResponse = null;
         var finalUsedProductCode = targetIsaProductCode;
+        var isaAuth = (account.isaAppKey && account.isaAppSecret) ? {
+          appKey: account.isaAppKey,
+          appSecret: account.isaAppSecret
+        } : null;
         
         try {
-          isaResponse = fetchKisDomesticAccountBalance_(targetIsaCano, targetIsaProductCode);
+          isaResponse = fetchKisDomesticAccountBalance_(targetIsaCano, targetIsaProductCode, isaAuth);
         } catch(isaErr) {
           // 🚀 [자율 상품코드 스마트 스캔 엔진 기동]
           // 만약 상품코드 오류(OPSQ2000 등)로 실패 시, 대표적인 다른 상품코드들로 자동 우회 스캔 집행
@@ -314,7 +318,7 @@ function collectHoldingsCurrent(forceRefresh) {
               
               try {
                 logInfo_('portfolio_collector', 'Scanning alternative KIS ISA product code candidate...', { candidate: candidate });
-                var tempRes = fetchKisDomesticAccountBalance_(targetIsaCano, candidate);
+                var tempRes = fetchKisDomesticAccountBalance_(targetIsaCano, candidate, isaAuth);
                 
                 // 만약 에러 없이 정상 응답이 오면 스캔 대성공!
                 if (tempRes && tempRes.rt_cd !== undefined && String(tempRes.rt_cd) === '0') {
