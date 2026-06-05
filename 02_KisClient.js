@@ -346,7 +346,10 @@ function fetchKisCurrentPrice_(symbol) {
   try {
     var cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) {
-      return JSON.parse(cached);
+      var parsed = JSON.parse(cached);
+      if (parsed && parsed.name && parsed.name !== symbol && !/^[0-9]+$/.test(parsed.name)) {
+        return parsed;
+      }
     }
   } catch(e) {}
   
@@ -532,7 +535,10 @@ function fetchKisOverseasCurrentPrice_(symbol) {
   try {
     var cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) {
-      return JSON.parse(cached);
+      var parsed = JSON.parse(cached);
+      if (parsed && parsed.name && parsed.name !== symbol && !/^[0-9]+$/.test(parsed.name)) {
+        return parsed;
+      }
     }
   } catch(e) {}
   
