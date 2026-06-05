@@ -396,7 +396,6 @@ function onOpen() {
   menu.addItem('📊 실시간 통합 보유 자산 기산', 'menuCollectHoldings');
   menu.addSeparator();
   menu.addItem('📈 실계좌(REAL) 운용 모드 전환', 'menuSetModeReal');
-  menu.addItem('📈 모의투자(PAPER) 운용 모드 전환', 'menuSetModePaper');
   menu.addItem('📈 API 모의투자(MOCK) 운용 모드 전환', 'menuSetModeMock');
   menu.addSeparator();
   menu.addItem('⚙️ 퀀트 50대 우량주 팩터 DB 즉시 갱신', 'menuUpdateQuantUniverseDatabase');
@@ -446,16 +445,6 @@ function menuSetModeReal() {
 }
 
 // 명시적인 PAPER 모드 래퍼 추가
-function menuSetModePaper() {
-  try {
-    setScriptProperty_('PORTFOLIO_MODE', 'PAPER');
-    collectHoldingsCurrent();
-    safeUiAlert_('🔄 [운용 모드 전환 완료]\n\n포트폴리오 주식 운용 모드가 가상 시장가 모의투자 모드인 [PAPER]로 즉각 전환되었습니다!');
-  } catch(e) {
-    safeUiAlert_('❌ [모드 전환 실패]: ' + e.message);
-  }
-}
-
 function menuSetModeMock() {
   try {
     setScriptProperty_('PORTFOLIO_MODE', 'MOCK');

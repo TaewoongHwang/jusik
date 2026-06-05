@@ -194,13 +194,11 @@ function collectHoldingsCurrent(forceRefresh) {
   var today = amTodayString_();
   var isMockMode = (portMode === 'mock');
   
-  // 기존 오늘자 보유 자산 캐시 일단 청소 (모드별로 격리하여 삭제함으로써 REAL, PAPER, MOCK 모드 간 데이터 유실 차단)
+  // 기존 오늘자 보유 자산 캐시 일단 청소 (모드별로 격리하여 삭제함으로써 REAL, MOCK 모드 간 데이터 유실 차단)
   if (isRealMode) {
     deleteHoldingsCurrentBySources_(today, ['kis', 'manual_', 'overseas']);
   } else if (isMockMode) {
     deleteHoldingsCurrentBySources_(today, ['mock_trading']);
-  } else {
-    deleteHoldingsCurrentBySources_(today, ['paper_trading']);
   }
   
   if (isRealMode) {
@@ -729,110 +727,7 @@ function collectHoldingsCurrent(forceRefresh) {
     
     logInfo_('portfolio_collector', 'Mock API portfolio collected successfully', { holdings_count: assets.length, total_eval: totalEval });
   } else {
-    // 💡 PAPER 모의투자 모드
-    try {
-      var paperRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO);
-      var lastPaper = paperRows.length > 0 ? paperRows[paperRows.length - 1] : null;
-      
-      if (!lastPaper) {
-        lastPaper = {
-          cash_amount: 5000000,
-          stock_eval_amount: 0,
-          total_eval_amount: 5000000,
-          active_positions_json: '[]'
-        };
-      }
-      
-      var cashAmount = parseFloat(lastPaper.cash_amount || 0);
-      var activePositions = JSON.parse(lastPaper.active_positions_json || '[]');
-      
-      var totalPurchase = cashAmount;
-      var totalEval = cashAmount;
-      var assets = [];
-      
-      // PAPER 모의투자 예수금 가산 및 CASH 자산화
-      if (cashAmount > 0) {
-        assets.push({
-          date: today,
-          symbol: 'CASH',
-          name: '모의투자 예수금',
-          quantity: cashAmount,
-          avg_price: 1,
-          current_price: 1,
-          purchase_amount: cashAmount,
-          eval_amount: cashAmount,
-          profit_loss_amount: 0,
-          profit_loss_pct: 0,
-          portfolio_weight_pct: 0,
-          source: 'paper_cash',
-          currency: 'KRW'
-        });
-      }
-      
-      activePositions.forEach(function(p) {
-        var qty = parseFloat(p.quantity || 0);
-        var avg = parseFloat(p.entry_price || p.avg_price || 0);
-        if (qty <= 0) return;
-        
-        var isCoin = (String(p.symbol).indexOf('KRW-') === 0 || /^[A-Z]{3,4}$/.test(p.symbol) === false);
-        var cur = avg;
-        var changePct = 0;
-        var name = p.name || p.symbol;
-        
-        try {
-          var quote;
-          if (isCoin) {
-            quote = fetchUpbitCurrentPrice_(p.symbol);
-          } else {
-            var isUs = /^[A-Za-z]/.test(p.symbol);
-            if (isUs) {
-              quote = fetchKisOverseasCurrentPrice_(p.symbol);
-            } else {
-              quote = fetchKisCurrentPrice_(p.symbol);
-            }
-          }
-          cur = quote.close || avg;
-          changePct = quote.change_pct || 0;
-          name = quote.name || name;
-        } catch(priceErr) {
-          logWarn_('portfolio_collector', 'Failed to fetch quote for paper symbol ' + p.symbol + '; using entry price', { error: priceErr.message });
-        }
-        
-        var purchaseAmt = qty * avg;
-        var evalAmt = qty * cur;
-        
-        totalPurchase += purchaseAmt;
-        totalEval += evalAmt;
-        
-        assets.push({
-          date: today,
-          symbol: p.symbol,
-          name: getStockKoreanName_(p.symbol, name),
-          quantity: qty,
-          avg_price: avg,
-          current_price: cur,
-          purchase_amount: purchaseAmt,
-          eval_amount: evalAmt,
-          profit_loss_amount: evalAmt - purchaseAmt,
-          profit_loss_pct: purchaseAmt > 0 ? ((evalAmt - purchaseAmt) / purchaseAmt * 100) : 0,
-          portfolio_weight_pct: 0,
-          source: 'paper_trading',
-          currency: 'KRW'
-        });
-      });
-      
-      if (assets.length > 0) {
-        assets.forEach(function(a) {
-          a.portfolio_weight_pct = totalEval > 0 ? roundNumber_(a.eval_amount / totalEval * 100, 2) : 0;
-          a.profit_loss_pct = roundNumber_(a.profit_loss_pct, 2);
-        });
-        appendObjectRows_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, assets);
-      }
-      
-      logInfo_('portfolio_collector', 'Paper portfolio collected successfully', { holdings_count: assets.length, total_eval: totalEval });
-    } catch(e) {
-      logWarn_('portfolio_collector', 'Failed to collect Paper portfolio', { error: e.message });
-    }
+    logWarn_('portfolio_collector', 'Unsupported PORTFOLIO_MODE configuration: ' + portMode);
   }
   
   // 🚀 [신설] 퀀트 국내/해외 300만원 모의 투자 계좌 잔고 취합 루프 (REAL/PAPER 모드 무관하게 상시 기동)
@@ -1056,161 +951,13 @@ function executeMockOrder_(symbol, actionType, qty, customPrice) {
 }
 
 function executePaperOrder_(symbol, actionType, qty, customPrice, isAutoRebal) {
-  var today = amTodayString_();
-  var cleanSymbol = normalizeStockSymbol_(symbol);
   var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
   
   if (portMode === 'mock') {
     return executeMockOrder_(symbol, actionType, qty, customPrice);
   }
   
-  if (portMode === 'real' && isAutoRebal !== true) {
-    throw new Error('현재 운용 모드가 실제계좌(REAL)입니다. 모의투자 체결을 집행할 수 없습니다. /mode paper 또는 /mode mock 명령어로 먼저 전환하세요.');
-  }
-  
-  var isCoin = (String(cleanSymbol).indexOf('KRW-') === 0 || /^[A-Z]{3,4}$/.test(cleanSymbol) === false);
-  var quote = null;
-  try {
-    if (isCoin) {
-      quote = fetchUpbitCurrentPrice_(cleanSymbol);
-    } else {
-      var isUs = /^[A-Za-z]/.test(cleanSymbol);
-      if (isUs) {
-        try {
-          quote = fetchKisOverseasCurrentPrice_(cleanSymbol);
-        } catch(ovsErr) {
-          quote = fetchYahooOverseasCurrentPrice_(cleanSymbol);
-        }
-      } else {
-        try {
-          quote = fetchKisCurrentPrice_(cleanSymbol);
-        } catch(domErr) {
-          quote = fetchNaverStockPrice_(cleanSymbol);
-        }
-      }
-    }
-  } catch(globalErr) {
-    logWarn_('paper_trading', 'Global price fetch failed for ' + cleanSymbol, { error: globalErr.message });
-  }
-  
-  var currentPrice = customPrice > 0 ? customPrice : (quote ? quote.close : 0);
-  if (currentPrice <= 0) {
-    throw new Error('실시간 현재가를 가져오지 못해 체결할 수 없습니다.');
-  }
-  
-  // 💡 가혹한 슬리피지(Slippage) 0.1% 페널티 적용
-  var slippageRate = 0.001;
-  var executionPrice = currentPrice;
-  if (actionType === 'BUY') {
-    executionPrice = Math.round(currentPrice * (1 + slippageRate));
-  } else if (actionType === 'SELL') {
-    executionPrice = Math.round(currentPrice * (1 - slippageRate));
-  }
-  
-  var amount = executionPrice * qty;
-  
-  // 잔고 복원
-  var paperRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO);
-  var lastPaper = paperRows.length > 0 ? paperRows[paperRows.length - 1] : null;
-  
-  if (!lastPaper) {
-    lastPaper = {
-      cash_amount: 5000000,
-      stock_eval_amount: 0,
-      total_eval_amount: 5000000,
-      active_positions_json: '[]'
-    };
-  }
-  
-  var cash = parseFloat(lastPaper.cash_amount || 0);
-  var activePositions = JSON.parse(lastPaper.active_positions_json || '[]');
-  
-  var stockName = getStockKoreanName_(cleanSymbol, quote ? quote.name : cleanSymbol);
-  var found = -1;
-  for (var i = 0; i < activePositions.length; i++) {
-    if (normalizeStockSymbol_(activePositions[i].symbol) === cleanSymbol) {
-      found = i;
-      break;
-    }
-  }
-  
-  if (actionType === 'BUY') {
-    if (cash < amount) {
-      throw new Error('가상 현금 잔고 부족! 현재 예수금: ' + formatNumber_(cash) + '원, 필요 금액: ' + formatNumber_(amount) + '원');
-    }
-    
-    cash -= amount;
-    if (found >= 0) {
-      var p = activePositions[found];
-      var totalCost = (p.quantity * p.entry_price) + amount;
-      p.quantity += qty;
-      p.entry_price = Math.round(totalCost / p.quantity);
-      p.eval_amount = p.quantity * executionPrice;
-    } else {
-      activePositions.push({
-        symbol: cleanSymbol,
-        name: stockName,
-        quantity: qty,
-        entry_price: executionPrice,
-        eval_amount: amount
-      });
-    }
-  } else if (actionType === 'SELL') {
-    if (found < 0 || activePositions[found].quantity < qty) {
-      throw new Error('보유 수량 부족! 현재 보유량: ' + (found >= 0 ? activePositions[found].quantity : 0) + '주, 요청량: ' + qty + '주');
-    }
-    
-    cash += amount;
-    var p = activePositions[found];
-    p.quantity -= qty;
-    p.eval_amount = p.quantity * executionPrice;
-    
-    if (p.quantity <= 0) {
-      activePositions.splice(found, 1);
-    }
-  }
-  
-  var stockEval = activePositions.reduce(function(sum, item) { return sum + item.eval_amount; }, 0);
-  var total = cash + stockEval;
-  
-  var newRecord = {
-    date: today,
-    cash_amount: Math.round(cash),
-    stock_eval_amount: Math.round(stockEval),
-    total_eval_amount: Math.round(total),
-    cumulative_return_pct: roundNumber_(((total - 5000000) / 5000000) * 100, 2),
-    active_positions_json: JSON.stringify(activePositions)
-  };
-  
-  // 1. 포트폴리오 스냅샷 기록
-  appendObjectRow_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO, newRecord);
-  
-  // 2. 가상 거래 대장(Ledger) 보존
-  appendObjectRow_(AM_CONFIG.SHEETS.PAPER_LEDGER, {
-    date: today,
-    symbol: cleanSymbol,
-    name: stockName,
-    action_type: actionType,
-    price: executionPrice,
-    quantity: qty,
-    amount: amount,
-    reason: (customPrice > 0 ? '지정가' : '실시간') + ' 모의 체결 (슬리피지 0.1% 반영)',
-    created_at: amNowString_()
-  });
-  
-  logInfo_('paper_trading', 'Executed paper order', { symbol: cleanSymbol, action: actionType, qty: qty, price: executionPrice });
-  
-  // 실시간 뷰 즉각 동기화
-  collectHoldingsCurrent();
-  
-  return {
-    success: true,
-    name: stockName,
-    executionPrice: executionPrice,
-    amount: amount,
-    cash: cash,
-    activePositions: activePositions
-  };
+  throw new Error('현재 운용 모드가 실제계좌(REAL)입니다. 모의 주문을 전송할 수 없습니다. /mode mock 명령어로 먼저 전환하세요.');
 }
 
 /**
