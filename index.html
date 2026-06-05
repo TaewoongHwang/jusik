@@ -2016,7 +2016,7 @@
         }
         
         // 국내/해외 주식 화폐 단위 정밀 판별
-        const isDomestic = /^\d{6}$/.test(s.symbol);
+        const isDomestic = /^[0-9][A-Z0-9]{5}$/i.test(s.symbol);
         const currencySuffix = isDomestic ? '원' : '달러';
         const marginSign = s.safety_margin >= 0 ? '+' : '';
         const marginColor = s.safety_margin >= 0 ? '#34d399' : 'rgba(255,255,255,0.4)';

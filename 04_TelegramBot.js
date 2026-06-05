@@ -2527,7 +2527,7 @@ function getQuantLabDataForWeb(forceRefresh) {
       // 실시간 전체 50개 연산 대신, AM_QUANT_FUNDAMENTAL_DB와 현재가만을 조립한 0.5초 기산기 기동
       var fastScoring = totalPool.map(function(sym) {
         var cleanSym = normalizeStockSymbol_(sym);
-        var isDom = /^\d{6}$/.test(cleanSym);
+        var isDom = /^[0-9][A-Z0-9]{5}$/i.test(cleanSym);
         
         var priceData = null;
         if (isDom) {
@@ -2647,14 +2647,16 @@ function getQuantLabDataForWeb(forceRefresh) {
         dbLookup[row.symbol] = item;
       });
       
-      // 💡 [자가 치유 엔진] 캐시 유실 혹은 연산 실패 종목(price <= 0) 감지 시 실시간 스캔 보충
+      // 💡 [자가 치유 엔진] 캐시 유실, 연산 실패, 혹은 종목명이 숫자/코드로 오염된 경우 실시간 스캔 보충
       var selfHealStock = function(symbol, cachedItem) {
-        if (!cachedItem || cachedItem.price <= 0) {
+        var cleanSym = normalizeStockSymbol_(symbol);
+        var isInvalidName = !cachedItem || !cachedItem.name || cachedItem.name === cleanSym || /^[0-9]+$/.test(cachedItem.name);
+        
+        if (!cachedItem || cachedItem.price <= 0 || isInvalidName) {
           try {
             // 🚀 [최적화] 자가치유 시 야후 파이낸스 일봉 차트 순차 조회를 절대 기동하지 않고, 
             // 현재가만 1회 다이렉트 조회하여 결합함으로써 연쇄 API 병목을 0초화
-            var cleanSym = normalizeStockSymbol_(symbol);
-            var isDom = /^\d{6}$/.test(cleanSym);
+            var isDom = /^[0-9][A-Z0-9]{5}$/i.test(cleanSym);
             var priceData = null;
             if (isDom) {
               try { priceData = fetchKisCurrentPrice_(cleanSym); } catch(e) { priceData = fetchNaverStockPrice_(cleanSym); }

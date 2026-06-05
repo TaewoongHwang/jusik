@@ -529,7 +529,7 @@ function getQuantStockScoring(symbolsList) {
   
   var scoredStocks = symbols.map(function(sym) {
     var cleanSym = normalizeStockSymbol_(sym);
-    var isDom = /^\d{6}$/.test(cleanSym);
+    var isDom = /^[0-9][A-Z0-9]{5}$/i.test(cleanSym);
     
     var priceData = null;
     if (isDom) {
