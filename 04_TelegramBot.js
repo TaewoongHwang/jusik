@@ -2479,7 +2479,9 @@ function getQuantLabDataForWeb(forceRefresh) {
     // VAA 자산배분 계산 시 캐싱(false)을 활용하여 초고속 반환 처리
     var vaa = getVaaStrategySignal(false);
     
-    var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
+    var holdingsAll = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
+    var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+    var holdings = filterHoldingsByMode_(holdingsAll, portMode);
     var today = amTodayString_();
     var uniqueSymbols = {};
     holdings.forEach(function(h) {
