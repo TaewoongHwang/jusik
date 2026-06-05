@@ -183,23 +183,34 @@ function normalizeKisOverseasDecimalAccountBalance_(response) {
 // ==================================================
 
 function collectHoldingsCurrent(forceRefresh) {
-  ensureAllSheets_();
-  
-  // 🚀 [초고속 10배 튜닝] 동일 종목 다중 조회 시 중복 네트워크 통신 병목을 0초로 강제 차단할 로컬 인메모리 사전 장착
-  var localPriceMap = {};
-  
-  // 수동 자산 중복 가중평균 자동 치유
-  try { cleanDuplicateManualHoldings_(); } catch(e) {}
-  
-  var today = amTodayString_();
-  var isMockMode = (portMode === 'mock');
-  
-  // 기존 오늘자 보유 자산 캐시 일단 청소 (모드별로 격리하여 삭제함으로써 REAL, MOCK 모드 간 데이터 유실 차단)
-  if (isRealMode) {
-    deleteHoldingsCurrentBySources_(today, ['kis', 'manual_', 'overseas']);
-  } else if (isMockMode) {
-    deleteHoldingsCurrentBySources_(today, ['mock_trading']);
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    logWarn_('portfolio_collector', 'Portfolio collection lock acquisition failed (concurrent execution). Skipping this run.');
+    return;
   }
+  try {
+    ensureAllSheets_();
+    
+    // 🚀 [초고속 10배 튜닝] 동일 종목 다중 조회 시 중복 네트워크 통신 병목을 0초로 강제 차단할 로컬 인메모리 사전 장착
+    var localPriceMap = {};
+    
+    // 수동 자산 중복 가중평균 자동 치유
+    try { cleanDuplicateManualHoldings_(); } catch(e) {}
+    
+    var today = amTodayString_();
+    var portMode = String(
+      getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.PORTFOLIO_MODE, 'REAL')
+    ).toUpperCase();
+    
+    var isRealMode = (portMode === 'REAL');
+    var isMockMode = (portMode === 'MOCK');
+    
+    // 기존 오늘자 보유 자산 캐시 일단 청소 (모드별로 격리하여 삭제함으로써 REAL, MOCK 모드 간 데이터 유실 차단)
+    if (isRealMode) {
+      deleteHoldingsCurrentBySources_(today, ['kis', 'manual_', 'overseas']);
+    } else if (isMockMode) {
+      deleteHoldingsCurrentBySources_(today, ['mock_trading']);
+    }
   
   if (isRealMode) {
     var totalPurchase = 0;
@@ -841,6 +852,9 @@ function collectHoldingsCurrent(forceRefresh) {
   try {
     rewriteHoldingWeightsForDate_(today);
   } catch(ex) {}
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function rewriteHoldingWeightsForDate_(today) {

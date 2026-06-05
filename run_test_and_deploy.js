@@ -196,6 +196,13 @@ const UtilitiesMock = {
   sleep: (ms) => {}
 };
 
+const LockServiceMock = {
+  getScriptLock: () => ({
+    tryLock: (timeout) => true,
+    releaseLock: () => {}
+  })
+};
+
 // 샌드박스 콘텍스트 생성
 const sandbox = {
   console: console,
@@ -203,6 +210,7 @@ const sandbox = {
   PropertiesService: PropertiesServiceMock,
   CacheService: CacheServiceMock,
   Utilities: UtilitiesMock,
+  LockService: LockServiceMock,
   Session: { getScriptTimeZone: () => "Asia/Seoul" },
   UrlFetchApp: {
     _lastPayload: null,

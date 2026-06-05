@@ -115,39 +115,54 @@ function getKisAccessToken_(customAuth) {
     return token;
   }
   
-  if (!appKey || !appSecret) {
-    throw new Error('KIS_APP_KEY or KIS_APP_SECRET is missing for access token.');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error('Access Token 생성 중 락을 획득하지 못했습니다.');
   }
   
-  var response = UrlFetchApp.fetch(baseUrl + '/oauth2/tokenP', {
-    method: 'post',
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8'
-    },
-    payload: JSON.stringify({
-      grant_type: 'client_credentials',
-      appkey: appKey,
-      appsecret: appSecret
-    }),
-    muteHttpExceptions: true
-  });
-  
-  var text = response.getContentText();
-  if (response.getResponseCode() !== 200) {
-    throw new Error('KIS token generation failed: ' + text);
+  try {
+    token = getScriptProperty_(propKey, null);
+    expiresAt = Number(getScriptProperty_(propExpiryKey, 0));
+    if (token && expiresAt > now + 600000) {
+      return token;
+    }
+    
+    if (!appKey || !appSecret) {
+      throw new Error('KIS_APP_KEY or KIS_APP_SECRET is missing for access token.');
+    }
+    
+    var response = UrlFetchApp.fetch(baseUrl + '/oauth2/tokenP', {
+      method: 'post',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      payload: JSON.stringify({
+        grant_type: 'client_credentials',
+        appkey: appKey,
+        appsecret: appSecret
+      }),
+      muteHttpExceptions: true
+    });
+    
+    var text = response.getContentText();
+    if (response.getResponseCode() !== 200) {
+      throw new Error('KIS token generation failed: ' + text);
+    }
+    
+    var res = JSON.parse(text);
+    if (!res.access_token) {
+      throw new Error('KIS token missing in response: ' + text);
+    }
+    
+    setScriptProperty_(propKey, res.access_token);
+    var expiry = new Date().getTime() + (Number(res.expires_in || 7200) * 1000);
+    setScriptProperty_(propExpiryKey, expiry);
+    
+    logInfo_('kis_auth', 'Generated new KIS access token for appkey suffix ' + keyHash, { expires_at: new Date(expiry).toLocaleString() });
+    return res.access_token;
+  } finally {
+    lock.releaseLock();
   }
-  
-  var res = JSON.parse(text);
-  if (!res.access_token) {
-    throw new Error('KIS token missing in response: ' + text);
-  }
-  
-  setScriptProperty_(propKey, res.access_token);
-  var expiry = new Date().getTime() + (Number(res.expires_in || 7200) * 1000);
-  setScriptProperty_(propExpiryKey, expiry);
-  
-  logInfo_('kis_auth', 'Generated new KIS access token for appkey suffix ' + keyHash, { expires_at: new Date(expiry).toLocaleString() });
-  return res.access_token;
 }
 
 /**
@@ -277,7 +292,9 @@ function getKisAccountConfig_() {
       
       if (hasUpdates) {
         service.setProperties(sheetProps, false);
-        logInfo_('properties_sync', 'Auto-synced ISA/MOCK account config from Settings sheet', sheetProps);
+        logInfo_('properties_sync', 'Auto-synced ISA/MOCK account config from Settings sheet', {
+          keys: Object.keys(sheetProps)
+        });
       }
     } catch(syncErr) {
       logWarn_('properties_sync', 'Auto-sync config failed', { error: syncErr.message });

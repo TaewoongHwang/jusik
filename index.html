@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JUSIK AI Portfolio Mini App</title>
   <!-- Google Fonts & FontAwesome -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,7 +24,9 @@
       --text-secondary: #94a3b8;
       --accent-blue: #3b82f6;
       --accent-purple: #8b5cf6;
+      --accent-yellow: #eab308;
       --positive-red: #f43f5e;
+      --negative-red: #ef4444;
       --negative-blue: #38bdf8;
       --glass-blur: blur(16px);
       --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
@@ -111,7 +113,7 @@
       color: var(--positive-red);
     }
 
-    .mode-badge.paper {
+    .mode-badge.mock {
       background: rgba(56, 189, 248, 0.15);
       border: 1px solid rgba(56, 189, 248, 0.3);
       color: var(--negative-blue);
@@ -543,15 +545,15 @@
     }
 
     .asset-card {
-      background: var(--glass-bg);
-      border: 1px solid var(--glass-border);
-      backdrop-filter: var(--glass-blur);
-      border-radius: 16px;
+      background: transparent;
+      border: none;
+      backdrop-filter: none;
+      border-radius: 0;
       padding: 14px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: var(--transition-smooth);
+      position: relative;
     }
 
     .asset-card:active {
@@ -1125,17 +1127,6 @@
     }
     
     /* 기존 asset-card의 배경과 테두리를 투명화하고 wrapper에서 통합 제어 */
-    .asset-card {
-      background: transparent !important;
-      border: none !important;
-      backdrop-filter: none !important;
-      border-radius: 0 !important;
-      padding: 14px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: relative;
-    }
     
     /* ✏️ 미려한 네온 오렌지/퍼플 편집 연필 단축 버튼 */
     .asset-edit-btn {
@@ -1674,6 +1665,35 @@
   </div>
 
   <script>
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function sanitizeHtml(str) {
+      if (!str) return '';
+      let escaped = escapeHtml(str);
+      return escaped
+        .replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>')
+        .replace(/&lt;i&gt;/g, '<i>').replace(/&lt;\/i&gt;/g, '</i>')
+        .replace(/&lt;code&gt;/g, '<code>').replace(/&lt;\/code&gt;/g, '</code>')
+        .replace(/&lt;br\s*\/*&gt;/g, '<br>')
+        .replace(/&lt;span([^&]*)&gt;/g, function(m, p1) {
+           return '<span' + p1.replace(/&quot;/g, '"').replace(/&#039;/g, "'") + '>';
+        }).replace(/&lt;\/span&gt;/g, '</span>')
+        .replace(/&lt;p&gt;/g, '<p>').replace(/&lt;\/p&gt;/g, '</p>')
+        .replace(/&lt;div([^&]*)&gt;/g, function(m, p1) {
+           return '<div' + p1.replace(/&quot;/g, '"').replace(/&#039;/g, "'") + '>';
+        }).replace(/&lt;\/div&gt;/g, '</div>')
+        .replace(/&lt;ul&gt;/g, '<ul>').replace(/&lt;\/ul&gt;/g, '</ul>')
+        .replace(/&lt;li&gt;/g, '<li>').replace(/&lt;\/li&gt;/g, '</li>');
+    }
+
     // 🌐 [CORS 세이프 Google Apps Script API 폴리필]
     // Vercel, Github Pages 등 외부 도메인 배포 시 google.script.run 호출을 동적으로 비동기 REST API 통신으로 완벽 전환합니다.
     // 기존의 index.html 소스코드는 단 한 줄도 훼손하지 않으므로 언제든지 Apps Script 내부 렌더링 방식으로 100% 폴백이 가능합니다.
@@ -2147,7 +2167,7 @@
           const mockup = {
             totalAsset: 14750200,
             percentChange: 5.4,
-            currentMode: "REAL", // "REAL" or "PAPER"
+            currentMode: "REAL", // "REAL" or "MOCK"
             totalCash: 2500000,
             totalProfitLoss: 755200,
             assets: [
@@ -2188,11 +2208,11 @@
 
       localPortfolioData = data; // 전역 메모리 캐시 백업
       
-      // 1. PAPER 모드일 때 국내/해외/전체 탭바 표시 처리 및 자산 필터링
+      // 1. MOCK 모드일 때 국내/해외/전체 탭바 표시 처리 및 자산 필터링
       let filteredAssets = data.assets || [];
       const paperSubTabs = document.getElementById("paperSubTabs");
       
-      if (data.currentMode === "PAPER") {
+      if (data.currentMode === "MOCK") {
         paperSubTabs.style.display = "flex";
         
         // 필터링 적용
@@ -2297,9 +2317,9 @@
       });
       dashboardProfitLossEl.innerText = `${profitLossAmtSign}${formattedProfitLoss}${currentCurrency === 'USD' ? '달러' : '원'}`;
 
-      // 자산 게이지 처리 (PAPER 모드일 때만 활성화)
+      // 자산 게이지 처리 (MOCK 모드일 때만 활성화)
       const gaugeContainer = document.getElementById("assetGaugeContainer");
-      if (data.currentMode === "PAPER" && filteredAssets) {
+      if (data.currentMode === "MOCK" && filteredAssets) {
         let totalStockEval = 0;
         filteredAssets.forEach(a => {
           if (a.symbol !== 'CASH') {
@@ -2345,7 +2365,7 @@
         badge.className = "mode-badge real";
         badge.innerHTML = '<i class="fa-solid fa-circle"></i> <span>실제 계좌</span>';
       } else {
-        badge.className = "mode-badge paper";
+        badge.className = "mode-badge mock";
         badge.innerHTML = '<i class="fa-solid fa-circle"></i> <span>모의 투자</span>';
       }
 
@@ -2449,13 +2469,13 @@
 
         if (iconType === "manual") {
           cardWrapper.innerHTML = `
-            <div class="asset-card" onclick="toggleAssetDetail('${asset.broker}', '${asset.symbol}')">
+            <div class="asset-card" onclick="toggleAssetDetail('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}')">
               <div class="asset-info">
                 <div class="asset-icon ${iconType}">${iconSymbol}</div>
                 <div class="asset-meta">
-                  <span class="asset-name">${asset.name}</span>
+                  <span class="asset-name">${escapeHtml(asset.name)}</span>
                   <span class="asset-symbol-label">
-                    ${asset.symbol} <span class="asset-broker">${asset.broker}</span>
+                    ${escapeHtml(asset.symbol)} <span class="asset-broker">${escapeHtml(asset.broker)}</span>
                   </span>
                 </div>
               </div>
@@ -2463,7 +2483,7 @@
                 <span class="asset-price">${formattedVal}</span>
                 <span class="asset-qty">${qtyAndPriceText}</span>
               </div>
-              <button class="asset-edit-btn" onclick="event.stopPropagation(); openEditModal('${asset.broker}', '${asset.symbol}', '${asset.qty || 0}', '${asset.price || 0}')" title="자산 편집">
+              <button class="asset-edit-btn" onclick="event.stopPropagation(); openEditModal('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '${asset.qty || 0}', '${asset.price || 0}')" title="자산 편집">
                 <i class="fa-solid fa-pen-to-square"></i>
               </button>
             </div>
@@ -2506,13 +2526,13 @@
           listContainer.appendChild(cardWrapper);
         } else {
           cardWrapper.innerHTML = `
-            <div class="asset-card" onclick="toggleAssetDetail('${asset.broker}', '${asset.symbol}')">
+            <div class="asset-card" onclick="toggleAssetDetail('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}')">
               <div class="asset-info">
                 <div class="asset-icon ${iconType}">${iconSymbol}</div>
                 <div class="asset-meta">
-                  <span class="asset-name">${asset.name}</span>
+                  <span class="asset-name">${escapeHtml(asset.name)}</span>
                   <span class="asset-symbol-label">
-                    ${asset.symbol} <span class="asset-broker">${asset.broker}</span>
+                    ${escapeHtml(asset.symbol)} <span class="asset-broker">${escapeHtml(asset.broker)}</span>
                   </span>
                 </div>
               </div>
@@ -2542,9 +2562,9 @@
               
               <div class="detail-chart-sec">
                 <div class="chart-tab-header">
-                  <span class="chart-tab active" id="tab-7d-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${asset.broker}', '${asset.symbol}', '7D')">7일 추이</span>
-                  <span class="chart-tab" id="tab-1m-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${asset.broker}', '${asset.symbol}', '1M')">1개월 추이</span>
-                  <span class="chart-tab" id="tab-1y-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${asset.broker}', '${asset.symbol}', '1Y')">1년 추이</span>
+                  <span class="chart-tab active" id="tab-7d-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '7D')">7일 추이</span>
+                  <span class="chart-tab" id="tab-1m-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '1M')">1개월 추이</span>
+                  <span class="chart-tab" id="tab-1y-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '1Y')">1년 추이</span>
                 </div>
                 
                 <div class="sparkline-wrapper">
@@ -2583,7 +2603,7 @@
 
     // Mode Toggle Logic
     function handleModeToggle(checkbox) {
-      const mode = checkbox.checked ? "REAL" : "PAPER";
+      const mode = checkbox.checked ? "REAL" : "MOCK";
       showHUD('loading', '투자 모드 변경 중', `${mode === 'REAL' ? '실제 계좌' : '모의 투자'} 모드로 전환하고 있습니다...`);
       
       if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -2604,7 +2624,7 @@
               currentBadge.className = "mode-badge real";
               currentBadge.innerHTML = '<i class="fa-solid fa-circle"></i> <span>실제 계좌</span>';
             } else {
-              currentBadge.className = "mode-badge paper";
+              currentBadge.className = "mode-badge mock";
               currentBadge.innerHTML = '<i class="fa-solid fa-circle"></i> <span>모의 투자</span>';
             }
             hideHUD();
@@ -2906,11 +2926,11 @@
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(result) {
-            let formattedHtml = String(result)
+            let safeContent = escapeHtml(result)
               .replace(/\n/g, '<br>')
               .replace(/`([^`]+)`/g, '<code>$1</code>')
               .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-            body.innerHTML = `<div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 14px; max-height: 430px; overflow-y: auto; text-align: left;">${formattedHtml}</div>`;
+            body.innerHTML = `<div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 14px; max-height: 430px; overflow-y: auto; text-align: left;">${safeContent}</div>`;
           })
           .withFailureHandler(function(err) {
             body.innerHTML = `
@@ -2927,10 +2947,10 @@
         setTimeout(function() {
           const mockResult = `🤖 [JUSIK AI 실시간 기술적 종목 진단]\n\n• <b>종목명:</b> ${name} (${symbol})\n• <b>현재 가격:</b> 71,800원 (+0.84% 당일)\n• <b>50일 가격 모멘텀:</b> +5.4%\n• <b>RSI(14):</b> 58 (중립/매수 우위)\n• <b>이동평균선:</b> 5일선 71,200원 vs 20일선 70,800원 (정배열 골든크로스 상승 유지)\n• <b>볼린저 밴드(20, 2):</b> 상한선 73,200원 / 하한선 69,400원 (현재가 밴드 내에 위치)\n• <b>탐지된 기술적 신호:</b> 특이 신호 없음 (정배열 강세 지속)\n\n<b>📊 보조지표 종합 진단:</b>\n현재 주가는 20일선 위에서 정배열 지지를 받으며 완만히 상승하고 있습니다. RSI가 58로 과열권(70) 아래에 머물러 있어 추가 상승 여력이 충분합니다. 볼린저 밴드 상한(73,200원)이 단기 저항선 역할을 할 것으로 예상됩니다.\n\n<b>🎯 시나리오별 실전 대응 전략:</b>\n1. <b>상승 시 대응전략:</b>\n   - 단기 목표가인 볼린저 밴드 상한선(73,200원) 돌파 시 거래량이 동반된다면 추가 홀딩하되, RSI가 70을 초과해 꺾일 때 <b>비중 20% 분할 매도</b>를 권장합니다.\n2. <b>횡보 시 대응전략:</b>\n   - 70,800원 ~ 72,500원 구간 박스권 횡보 시에는 관망하며 추가 비중 확보보다는 기존 포지션 유지를 추천합니다.\n3. <b>하락 시 대응전략:</b>\n   - 20일선이자 심리적 지지선인 70,800원 이탈 시 비중 축소를 고민해야 합니다. 최종 <b>손절가 기준은 69,400원 (볼린저밴드 하한선)</b>으로 설정하여 리스크를 제한하십시오.`;
           
-          let formattedHtml = mockResult
+          let safeContent = escapeHtml(mockResult)
             .replace(/\n/g, '<br>')
             .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-          body.innerHTML = `<div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 14px; max-height: 430px; overflow-y: auto; text-align: left;">${formattedHtml}</div>`;
+          body.innerHTML = `<div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 14px; max-height: 430px; overflow-y: auto; text-align: left;">${safeContent}</div>`;
         }, 2000);
       }
     }
@@ -3137,11 +3157,11 @@
         
         card.innerHTML = `
           <div class="news-header-sec">
-            <span class="news-source"><i class="fa-solid fa-circle-nodes"></i> ${item.source}</span>
-            <span class="news-time"><i class="fa-regular fa-clock"></i> ${item.pubDate}</span>
+            <span class="news-source"><i class="fa-solid fa-circle-nodes"></i> ${escapeHtml(item.source)}</span>
+            <span class="news-time"><i class="fa-regular fa-clock"></i> ${escapeHtml(item.pubDate)}</span>
           </div>
-          <div class="news-title">${item.title}</div>
-          <div class="news-desc">${item.description}</div>
+          <div class="news-title">${escapeHtml(item.title)}</div>
+          <div class="news-desc">${escapeHtml(item.description)}</div>
         `;
         container.appendChild(card);
       });
@@ -3471,26 +3491,21 @@
         google.script.run
           .withSuccessHandler((res) => {
             if (res && res.advice) {
-              let htmlText = res.advice;
+              let adviceText = res.advice;
               
               // 1. 마크다운 코드 블록 찌꺼기 완벽 정화
-              htmlText = htmlText.replace(/```[a-z]*/gi, '');
+              adviceText = adviceText.replace(/```[a-z]*/gi, '');
               
               // 2. 단일 백틱(`) 청소
-              htmlText = htmlText.replace(/`/g, '');
+              adviceText = adviceText.replace(/`/g, '');
               
-              // 3. HTML 엔티티 이중 정화 (문자 태그를 진짜 태그로 강제 복원)
-              htmlText = htmlText.replace(/&lt;/g, '<')
-                                 .replace(/&gt;/g, '>')
-                                 .replace(/&amp;/g, '&');
+              // 3. 먼저 sanitizeHtml을 적용하여 HTML 인젝션 공격 소스 무력화
+              let safeHtml = sanitizeHtml(adviceText);
               
-              // 4. 마크다운 볼드(**) 정밀 치환 (RegExp 표준화)
-              htmlText = htmlText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-              
-              // 5. 개행 및 이중 개행 변환 (RegExp 표준화)
-              htmlText = htmlText.replace(/\n/g, '<br>');
-              
-              htmlText = htmlText.trim();
+              // 4. 안전해진 텍스트에서 마크다운 요소(볼드, 개행 등) 복원/렌더링
+              safeHtml = safeHtml.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+              safeHtml = safeHtml.replace(/\n/g, '<br>');
+              safeHtml = safeHtml.trim();
               
               panel.innerHTML = `
                 <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(139, 92, 246, 0.15); border-radius: 12px; padding: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);">
@@ -3498,7 +3513,7 @@
                     <i class="fa-solid fa-square-poll-vertical"></i> 월스트리트 헤지펀드 AI 퀀트 자문서
                   </div>
                   <div style="color: var(--text-primary); line-height: 1.6; font-size: 0.8rem; word-break: keep-all;">
-                    ${htmlText}
+                    ${safeHtml}
                   </div>
                   <div style="margin-top: 12px; font-size: 0.65rem; color: var(--text-secondary); text-align: right; border-top: 1px dashed rgba(255,255,255,0.05); padding-top: 8px; display: flex; justify-content: space-between; align-items: center;">
                     <span style="color: var(--accent-purple); cursor: pointer; font-weight: bold; text-decoration: underline;" onclick="askAiForRebalancingAdvice(true)">

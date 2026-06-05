@@ -53,7 +53,7 @@ function setTelegramCommands() {
       { command: 'macro', description: '거시경제 & AI 융합 자산 리포트 조회 (/리포트)' },
       { command: 'quant', description: '⚙️ 실시간 VAA 자산배분 및 팩터 랭킹 조회 (/퀀트)' },
       { command: 'clearall', description: '모든 수동 등록 자산 일괄 청산' },
-      { command: 'mode', description: '투자 모드(REAL/PAPER) 전환' },
+      { command: 'mode', description: '투자 모드(REAL/MOCK) 전환' },
       { command: 'install', description: '장전/장후 AI 리포트 자동화 스케줄러 설치' },
       { command: 'install_triggers', description: '장전/장후 AI 리포트 자동화 스케줄러 설치' }
     ]
@@ -243,16 +243,8 @@ function doPost(e) {
         collectHoldingsCurrent();
         var today = amTodayString_();
         var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toUpperCase();
-        var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
-          var isToday = (normalizeDateValue_(row.date) === today);
-          if (!isToday) return false;
-          
-          var src = String(row.source || '').trim();
-          if (portMode === 'MOCK') {
-            return (src.indexOf('mock_') === 0);
-          } else {
-            return (src.indexOf('kis') === 0 || src.indexOf('manual_') === 0 || src === 'overseas');
-          }
+        var holdings = filterHoldingsByMode_(readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT), portMode).filter(function(row) {
+          return normalizeDateValue_(row.date) === today;
         });
         
         var webAppUrl = getWebAppUrl_();
@@ -675,124 +667,151 @@ function doPost(e) {
 // ==================================================
 
 function updateManualHoldingFromTelegram_(broker, symbol, qty, price) {
-  var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
-  var cleanSymbol = normalizeStockSymbol_(symbol);
-  var cleanBroker = normalizeBrokerName_(broker);
-  
-  var name = getStockKoreanName_(cleanSymbol, cleanSymbol);
-  
-  var rows = readObjects_(sheetName);
-  var foundIndex = -1;
-  for (var i = 0; i < rows.length; i++) {
-    if (normalizeBrokerName_(rows[i].broker) === cleanBroker && normalizeStockSymbol_(rows[i].symbol) === cleanSymbol) {
-      foundIndex = i;
-      break;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error('수동 자산 등록 락을 획득하지 못했습니다.');
+  }
+  try {
+    var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
+    var cleanSymbol = normalizeStockSymbol_(symbol);
+    var cleanBroker = normalizeBrokerName_(broker);
+    
+    var name = getStockKoreanName_(cleanSymbol, cleanSymbol);
+    
+    var rows = readObjects_(sheetName);
+    var foundIndex = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (normalizeBrokerName_(rows[i].broker) === cleanBroker && normalizeStockSymbol_(rows[i].symbol) === cleanSymbol) {
+        foundIndex = i;
+        break;
+      }
     }
+    
+    var updated = {
+      broker: cleanBroker,
+      symbol: cleanSymbol,
+      name: name,
+      quantity: qty,
+      avg_price: price,
+      active: 'Y',
+      memo: '텔레그램 갱신'
+    };
+    
+    if (foundIndex >= 0) {
+      // 덮어쓰기
+      var sheet = ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
+      
+      // 🚀 [금액 꼬임 완치] 실제 구글 시트 상의 첫 번째 행 헤더에서 정확한 열(Column) 번호를 동적으로 판별
+      var actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) {
+        return String(h).trim();
+      });
+      
+      var nameCol = actualHeaders.indexOf('name') + 1;
+      var qtyCol = actualHeaders.indexOf('quantity') + 1;
+      var priceCol = actualHeaders.indexOf('avg_price') + 1;
+      var activeCol = actualHeaders.indexOf('active') + 1;
+      var memoCol = actualHeaders.indexOf('memo') + 1;
+      
+      // 폴백 조치: 실제 시트에 열이 누락되었거나 비정상일 경우 마스터 스펙 백업
+      var fallbackHeaders = AM_SHEET_SCHEMAS[sheetName];
+      if (nameCol <= 0) nameCol = fallbackHeaders.indexOf('name') + 1;
+      if (qtyCol <= 0) qtyCol = fallbackHeaders.indexOf('quantity') + 1;
+      if (priceCol <= 0) priceCol = fallbackHeaders.indexOf('avg_price') + 1;
+      if (activeCol <= 0) activeCol = fallbackHeaders.indexOf('active') + 1;
+      if (memoCol <= 0) memoCol = fallbackHeaders.indexOf('memo') + 1;
+      
+      var fileRow = foundIndex + 2; // 헤더 제외 1-indexed
+      if (qtyCol > 0) sheet.getRange(fileRow, qtyCol).setValue(qty);
+      if (priceCol > 0) sheet.getRange(fileRow, priceCol).setValue(price);
+      if (activeCol > 0) sheet.getRange(fileRow, activeCol).setValue('Y');
+      if (nameCol > 0) sheet.getRange(fileRow, nameCol).setValue(name);
+      if (memoCol > 0) sheet.getRange(fileRow, memoCol).setValue('텔레그램 수정 갱신');
+    } else {
+      // 신규 추가
+      appendObjectRow_(sheetName, updated);
+    }
+    
+    return updated;
+  } finally {
+    lock.releaseLock();
   }
-  
-  var updated = {
-    broker: cleanBroker,
-    symbol: cleanSymbol,
-    name: name,
-    quantity: qty,
-    avg_price: price,
-    active: 'Y',
-    memo: '텔레그램 갱신'
-  };
-  
-  if (foundIndex >= 0) {
-    // 덮어쓰기
-    var sheet = ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
-    
-    // 🚀 [금액 꼬임 완치] 실제 구글 시트 상의 첫 번째 행 헤더에서 정확한 열(Column) 번호를 동적으로 판별
-    var actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) {
-      return String(h).trim();
-    });
-    
-    var nameCol = actualHeaders.indexOf('name') + 1;
-    var qtyCol = actualHeaders.indexOf('quantity') + 1;
-    var priceCol = actualHeaders.indexOf('avg_price') + 1;
-    var activeCol = actualHeaders.indexOf('active') + 1;
-    var memoCol = actualHeaders.indexOf('memo') + 1;
-    
-    // 폴백 조치: 실제 시트에 열이 누락되었거나 비정상일 경우 마스터 스펙 백업
-    var fallbackHeaders = AM_SHEET_SCHEMAS[sheetName];
-    if (nameCol <= 0) nameCol = fallbackHeaders.indexOf('name') + 1;
-    if (qtyCol <= 0) qtyCol = fallbackHeaders.indexOf('quantity') + 1;
-    if (priceCol <= 0) priceCol = fallbackHeaders.indexOf('avg_price') + 1;
-    if (activeCol <= 0) activeCol = fallbackHeaders.indexOf('active') + 1;
-    if (memoCol <= 0) memoCol = fallbackHeaders.indexOf('memo') + 1;
-    
-    var fileRow = foundIndex + 2; // 헤더 제외 1-indexed
-    if (qtyCol > 0) sheet.getRange(fileRow, qtyCol).setValue(qty);
-    if (priceCol > 0) sheet.getRange(fileRow, priceCol).setValue(price);
-    if (activeCol > 0) sheet.getRange(fileRow, activeCol).setValue('Y');
-    if (nameCol > 0) sheet.getRange(fileRow, nameCol).setValue(name);
-    if (memoCol > 0) sheet.getRange(fileRow, memoCol).setValue('텔레그램 수정 갱신');
-  } else {
-    // 신규 추가
-    appendObjectRow_(sheetName, updated);
-  }
-  
-  return updated;
 }
  
 function subtractManualHoldingFromTelegram_(broker, symbol, qtyToSubtract) {
-  var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
-  var cleanSymbol = normalizeStockSymbol_(symbol);
-  var cleanBroker = normalizeBrokerName_(broker);
-  
-  var rows = readObjects_(sheetName);
-  var foundIndex = -1;
-  for (var i = 0; i < rows.length; i++) {
-    if (normalizeBrokerName_(rows[i].broker) === cleanBroker && normalizeStockSymbol_(rows[i].symbol) === cleanSymbol) {
-      foundIndex = i;
-      break;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error('수동 자산 차감 락을 획득하지 못했습니다.');
+  }
+  try {
+    var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
+    var cleanSymbol = normalizeStockSymbol_(symbol);
+    var cleanBroker = normalizeBrokerName_(broker);
+    
+    var rows = readObjects_(sheetName);
+    var foundIndex = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (normalizeBrokerName_(rows[i].broker) === cleanBroker && normalizeStockSymbol_(rows[i].symbol) === cleanSymbol) {
+        foundIndex = i;
+        break;
+      }
     }
-  }
-  
-  if (foundIndex < 0) {
-    return { success: false };
-  }
-  
-  var row = rows[foundIndex];
-  var currentQty = parseFloat(row.quantity || 0);
-  var newQty = currentQty - qtyToSubtract;
-  
-  if (newQty <= 0) {
-    // 0 이하면 아예 지워주거나 active='N'
-    clearManualHoldingFromTelegram_(broker, symbol);
-    return { success: true, action: 'CLEARED', name: row.name };
-  } else {
-    // 수량 변경
-    var sheet = ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
     
-    // 🚀 실제 헤더 동적 스캔
-    var actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) {
-      return String(h).trim();
-    });
-    var qtyCol = actualHeaders.indexOf('quantity') + 1;
-    var memoCol = actualHeaders.indexOf('memo') + 1;
+    if (foundIndex < 0) {
+      return { success: false };
+    }
     
-    var fallbackHeaders = AM_SHEET_SCHEMAS[sheetName];
-    if (qtyCol <= 0) qtyCol = fallbackHeaders.indexOf('quantity') + 1;
-    if (memoCol <= 0) memoCol = fallbackHeaders.indexOf('memo') + 1;
+    var row = rows[foundIndex];
+    var currentQty = parseFloat(row.quantity || 0);
+    var newQty = currentQty - qtyToSubtract;
     
-    if (qtyCol > 0) sheet.getRange(foundIndex + 2, qtyCol).setValue(newQty);
-    if (memoCol > 0) sheet.getRange(foundIndex + 2, memoCol).setValue('부분 차감 매도');
-    
-    return {
-      success: true,
-      action: 'SUBTRACTED',
-      name: row.name,
-      prevQty: currentQty,
-      newQty: newQty,
-      avgPrice: parseFloat(row.avg_price || 0)
-    };
+    if (newQty <= 0) {
+      // 0 이하면 아예 지워줌 (데드락 방지를 위해 NoLock 버전 호출)
+      var clearRes = clearManualHoldingFromTelegramNoLock_(broker, symbol);
+      return { success: clearRes.success, action: 'CLEARED', name: clearRes.name || row.name };
+    } else {
+      // 수량 변경
+      var sheet = ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
+      
+      var actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) {
+        return String(h).trim();
+      });
+      var qtyCol = actualHeaders.indexOf('quantity') + 1;
+      var memoCol = actualHeaders.indexOf('memo') + 1;
+      
+      var fallbackHeaders = AM_SHEET_SCHEMAS[sheetName];
+      if (qtyCol <= 0) qtyCol = fallbackHeaders.indexOf('quantity') + 1;
+      if (memoCol <= 0) memoCol = fallbackHeaders.indexOf('memo') + 1;
+      
+      if (qtyCol > 0) sheet.getRange(foundIndex + 2, qtyCol).setValue(newQty);
+      if (memoCol > 0) sheet.getRange(foundIndex + 2, memoCol).setValue('부분 차감 매도');
+      
+      return {
+        success: true,
+        action: 'SUBTRACTED',
+        name: row.name,
+        prevQty: currentQty,
+        newQty: newQty,
+        avgPrice: parseFloat(row.avg_price || 0)
+      };
+    }
+  } finally {
+    lock.releaseLock();
   }
 }
 
 function clearManualHoldingFromTelegram_(broker, symbol) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error('수동 자산 해제 락을 획득하지 못했습니다.');
+  }
+  try {
+    return clearManualHoldingFromTelegramNoLock_(broker, symbol);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function clearManualHoldingFromTelegramNoLock_(broker, symbol) {
   var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
   var cleanSymbol = normalizeStockSymbol_(symbol);
   var cleanBroker = normalizeBrokerName_(broker);
@@ -810,21 +829,19 @@ function clearManualHoldingFromTelegram_(broker, symbol) {
     var nameCol = headers.indexOf('name');
     
     if (brokerCol >= 0 && symbolCol >= 0) {
-      // 역순 루프를 돌며 실제 일치하는 행을 완전히 소거 (빈 행이 끼어있어도 인덱스 꼬임 완전 원천 방지)
       for (var i = values.length - 1; i >= 1; i--) {
         var rowBroker = normalizeBrokerName_(values[i][brokerCol]);
         var rowSymbol = normalizeStockSymbol_(values[i][symbolCol]);
         
         if (rowBroker === cleanBroker && rowSymbol === cleanSymbol) {
           name = nameCol >= 0 ? values[i][nameCol] : "";
-          sheet.deleteRow(i + 1); // 1-indexed 실제 행 삭제
+          sheet.deleteRow(i + 1);
           success = true;
         }
       }
     }
   }
   
-  // 🚀 오늘자 스냅샷(HOLDINGS_CURRENT)에서도 이중 소거 (실시간 동기화 오류 원천 완치)
   try {
     var today = amTodayString_();
     var currentSheetName = AM_CONFIG.SHEETS.HOLDINGS_CURRENT;
@@ -837,7 +854,6 @@ function clearManualHoldingFromTelegram_(broker, symbol) {
       var sourceCol = currentHeaders.indexOf('source');
       
       if (dateCol >= 0 && currentSymbolCol >= 0 && sourceCol >= 0) {
-        // 역순 루프를 돌면서 삭제
         for (var j = currentValues.length - 1; j >= 1; j--) {
           var rowDate = normalizeDateValue_(currentValues[j][dateCol]);
           var rowSymbol = normalizeStockSymbol_(currentValues[j][currentSymbolCol]);
@@ -846,12 +862,11 @@ function clearManualHoldingFromTelegram_(broker, symbol) {
           if (rowDate === today && 
               rowSymbol === cleanSymbol && 
               rowSource.indexOf('manual_') === 0) {
-            currentSheet.deleteRow(j + 1); // 1-indexed
+            currentSheet.deleteRow(j + 1);
           }
         }
       }
     }
-    // 삭제 후 포트폴리오 가중치 재계산
     rewriteHoldingWeightsForDate_(today);
   } catch (err) {
     logWarn_('clear_manual_snapshot', 'Failed to double delete holding snapshot', { error: err.message });
@@ -861,34 +876,42 @@ function clearManualHoldingFromTelegram_(broker, symbol) {
 }
 
 function clearAllManualHoldingsFromTelegram_() {
-  var today = amTodayString_();
-  clearDataRows_(AM_CONFIG.SHEETS.MANUAL_HOLDINGS);
-  
-  var currentSheetName = AM_CONFIG.SHEETS.HOLDINGS_CURRENT;
-  var currentSheet = ensureSheet_(currentSheetName, AM_SHEET_SCHEMAS[currentSheetName]);
-  var values = currentSheet.getDataRange().getValues();
-  if (values.length > 1) {
-    var headers = values[0];
-    var dateIndex = headers.indexOf('date');
-    var sourceIndex = headers.indexOf('source');
-    
-    if (dateIndex >= 0 && sourceIndex >= 0) {
-      var keepRows = [];
-      for (var i = 1; i < values.length; i += 1) {
-        var rowDate = normalizeDateValue_(values[i][dateIndex]);
-        var rowSource = String(values[i][sourceIndex] || '');
-        if (rowDate === today && rowSource.indexOf('manual_') === 0) {
-          // 제외
-        } else {
-          keepRows.push(values[i]);
-        }
-      }
-      rewriteDataRows_(currentSheet, headers.length, keepRows);
-    }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error('전체 수동 자산 해제 락을 획득하지 못했습니다.');
   }
-  
-  try { rewriteHoldingWeightsForDate_(today); } catch(e) {}
-  return { success: true };
+  try {
+    var today = amTodayString_();
+    clearDataRows_(AM_CONFIG.SHEETS.MANUAL_HOLDINGS);
+    
+    var currentSheetName = AM_CONFIG.SHEETS.HOLDINGS_CURRENT;
+    var currentSheet = ensureSheet_(currentSheetName, AM_SHEET_SCHEMAS[currentSheetName]);
+    var values = currentSheet.getDataRange().getValues();
+    if (values.length > 1) {
+      var headers = values[0];
+      var dateIndex = headers.indexOf('date');
+      var sourceIndex = headers.indexOf('source');
+      
+      if (dateIndex >= 0 && sourceIndex >= 0) {
+        var keepRows = [];
+        for (var i = 1; i < values.length; i += 1) {
+          var rowDate = normalizeDateValue_(values[i][dateIndex]);
+          var rowSource = String(values[i][sourceIndex] || '');
+          if (rowDate === today && rowSource.indexOf('manual_') === 0) {
+            // 제외
+          } else {
+            keepRows.push(values[i]);
+          }
+        }
+        rewriteDataRows_(currentSheet, headers.length, keepRows);
+      }
+    }
+    
+    try { rewriteHoldingWeightsForDate_(today); } catch(e) {}
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ==================================================
@@ -1022,17 +1045,10 @@ function doGet(e) {
     var allowedFunctions = [
       'getPortfolioDataForWeb',
       'getPaperLedgerDataForWeb',
-      'toggleInvestmentModeFromWeb',
-      'updateHoldingFromWeb',
       'getStockNewsForWeb',
-      'getAiPortfolioAdviceForWeb',
       'getVaaStrategySignal',
       'getQuantStockScoring',
-      'updateQuantUniverseDatabase',
-      'runQuantPortfolioRebalancing',
-      'callGeminiStockAnalysis_',
-      'getQuantLabDataForWeb',
-      'getLogsForDebug_'
+      'getQuantLabDataForWeb'
     ];
     
     if (allowedFunctions.indexOf(funcName) < 0) {
@@ -1328,7 +1344,7 @@ function doGet(e) {
   
   return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('JUSIK AI Portfolio')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
 }
 
 function getPortfolioDataForWeb(forceRefresh) {
@@ -1351,16 +1367,8 @@ function getPortfolioDataForWeb(forceRefresh) {
     logInfo_('portfolio_api', 'Using cached sheet portfolio holdings snapshot for speed', { holdings_count: existingTodayHoldings.length });
   }
   
-  var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
-    var isToday = (normalizeDateValue_(row.date) === today);
-    if (!isToday) return false;
-    
-    var src = String(row.source || '').trim();
-    if (currentMode === 'PAPER') {
-      return (src.indexOf('paper_') === 0);
-    } else {
-      return (src.indexOf('kis') === 0 || src.indexOf('manual_') === 0 || src === 'overseas');
-    }
+  var holdings = filterHoldingsByMode_(readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT), currentMode).filter(function(row) {
+    return normalizeDateValue_(row.date) === today;
   });
   
   // 🚀 최근 가격 추이를 시트 과거 데이터에서 스캔하여 수집
@@ -1414,7 +1422,7 @@ function getPortfolioDataForWeb(forceRefresh) {
   // 🚀 누적 실현 손익(Realized P&L) 계산
   var totalRealizedPl = 0;
   try {
-    if (currentMode === 'PAPER') {
+    if (currentMode === 'MOCK') {
       // 모의투자는 종목 거래대장(paper_ledger)에서 누적 계산
       // (기본 설계상 paper_ledger에는 단순 수량/금액만 기재되므로 여기선 0 또는 기입된 realised 수익금 처리)
     } else {
@@ -1638,7 +1646,7 @@ function getStockNewsForWeb(forceRefresh) {
 }
 
 function toggleInvestmentModeFromWeb(mode) {
-  var targetMode = (mode === 'REAL') ? 'REAL' : 'PAPER';
+  var targetMode = (mode === 'REAL') ? 'REAL' : 'MOCK';
   setScriptProperty_('PORTFOLIO_MODE', targetMode);
   collectHoldingsCurrent();
   return { success: true, mode: targetMode };
@@ -2010,7 +2018,8 @@ function runPremarketAiReport() {
   // 1. KIS/PAPER 보유 자산 로드하여 공시 스캔 타겟 종목 추출
   var today = amTodayString_();
   collectHoldingsCurrent();
-  var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
+  var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+  var holdings = filterHoldingsByMode_(readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT), portMode).filter(function(row) {
     return normalizeDateValue_(row.date) === today;
   });
   
@@ -2179,59 +2188,70 @@ function runDailyClosePaperTradingReport() {
   });
   
   var paperHoldings = holdings.filter(function(h) {
-    return h.source === 'paper_trading';
+    return h.source === 'paper_trading_dom' || h.source === 'paper_trading_us';
   });
   
-  var cash = 5000000;
+  // 국내/해외 퀀트 모의투자 계좌의 최신 잔고 요약
+  var domCash = 3000000;
+  var usCash = 3000000; // 원화 환산 기준 시드
+  
   try {
-    var pRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO);
-    if (pRows.length > 0) {
-      var latestRecord = pRows[pRows.length - 1];
-      cash = parseFloat(latestRecord.cash_amount || latestRecord.cash_balance || 5000000);
+    var domRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO_DOM);
+    if (domRows.length > 0) {
+      domCash = parseFloat(domRows[domRows.length - 1].total_eval_amount || 3000000);
+    }
+  } catch(e) {}
+  
+  try {
+    var usRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO_US);
+    if (usRows.length > 0) {
+      var latestUs = usRows[usRows.length - 1];
+      var usdRate = 1350;
+      try {
+        var liveRate = getLiveUsdRate_();
+        if (liveRate > 500) usdRate = liveRate;
+      } catch(exRate) {}
+      usCash = parseFloat(latestUs.total_eval_amount || 0) * usdRate;
     }
   } catch(e) {}
   
   var totalPurchase = 0;
   var totalEval = 0;
   var textLines = [
-    '🤖 <b>[JUSIK AI 오늘의 모의투자 정산 보고서]</b> 🔔',
+    '🤖 <b>[JUSIK AI 오늘의 퀀트 모의투자 정산 보고서]</b> 🔔',
     '----------------------------------------',
     '📆 <b>정산일자:</b> <code>' + today + '</code>\n'
   ];
   
   if (paperHoldings.length === 0) {
-    textLines.push('• 금일 가상 모의투자 보유 주식이 없습니다.');
-    textLines.push('• 가상 예수금 잔고: <b>' + formatNumber_(Math.round(cash)) + '원</b>');
+    textLines.push('• 금일 퀀트 모의투자 보유 주식이 없습니다.');
   } else {
-    textLines.push('📋 <b>보유 가상 주식 세부 잔고:</b>');
+    textLines.push('📋 <b>보유 퀀트 주식 세부 잔고:</b>');
     paperHoldings.forEach(function(h) {
-      totalPurchase += parseFloat(h.purchase_amount || 0);
-      totalEval += parseFloat(h.eval_amount || 0);
-      
-      var profitSign = h.profit_loss_pct >= 0 ? '+' : '';
-      textLines.push(
-        '• <b>' + h.name + '</b> (' + h.symbol + ')\n' +
-        '  수량: <b>' + formatNumber_(h.quantity) + '주</b> | 평단: <b>' + formatNumber_(Math.round(h.avg_price)) + '원</b>\n' +
-        '  평가액: <b>' + formatNumber_(Math.round(h.eval_amount)) + '원</b> | 수익률: <b>' + profitSign + h.profit_loss_pct + '%</b>'
-      );
+      if (h.symbol !== 'CASH') {
+        totalPurchase += parseFloat(h.purchase_amount || 0);
+        totalEval += parseFloat(h.eval_amount || 0);
+        
+        var profitSign = h.profit_loss_pct >= 0 ? '+' : '';
+        var typeText = h.source === 'paper_trading_dom' ? '국내' : '해외';
+        textLines.push(
+          '• <b>[' + typeText + '] ' + h.name + '</b> (' + h.symbol + ')\n' +
+          '  수량: <b>' + formatNumber_(h.quantity) + '주</b> | 평단: <b>' + formatNumber_(Math.round(h.avg_price)) + '원</b>\n' +
+          '  평가액: <b>' + formatNumber_(Math.round(h.eval_amount)) + '원</b> | 수익률: <b>' + profitSign + h.profit_loss_pct + '%</b>'
+        );
+      }
     });
     
-    var totalPfs = totalEval - totalPurchase;
-    var totalPfsPct = totalPurchase > 0 ? (totalPfs / totalPurchase * 100) : 0;
-    var totalSign = totalPfs >= 0 ? '🔺' : '🔻';
-    var pctSign = totalPfsPct >= 0 ? '+' : '';
-    
-    var grandTotalAsset = cash + totalEval;
-    var totalYield = (grandTotalAsset - 5000000) / 5000000 * 100;
+    var grandTotalAsset = domCash + usCash;
+    var totalYield = (grandTotalAsset - 6000000) / 6000000 * 100;
     var yieldSign = totalYield >= 0 ? '+' : '';
     
     textLines.push('');
-    textLines.push('💰 <b>모의투자 계좌 평가 요약:</b>');
-    textLines.push('• 주식 총 평가액: <b>' + formatNumber_(Math.round(totalEval)) + '원</b>');
-    textLines.push('• 가상 예수금 잔고: <b>' + formatNumber_(Math.round(cash)) + '원</b>');
-    textLines.push('• <b>총 가상 자산 평가액: ' + formatNumber_(Math.round(grandTotalAsset)) + '원</b>');
-    textLines.push('• ' + totalSign + ' 당일 보유주 손익: <b>' + formatNumber_(Math.round(totalPfs)) + '원</b> (<b>' + pctSign + totalPfsPct.toFixed(2) + '%</b>)');
-    textLines.push('• 누적 모의 계좌 수익률: <b>' + yieldSign + totalYield.toFixed(2) + '%</b> (최초 500만 원 대비)');
+    textLines.push('💰 <b>퀀트 모의 계좌 평가 요약 (시드 600만원 대비):</b>');
+    textLines.push('• 국내 퀀트 계좌 평가액: <b>' + formatNumber_(Math.round(domCash)) + '원</b>');
+    textLines.push('• 해외 퀀트 계좌 평가액: <b>' + formatNumber_(Math.round(usCash)) + '원</b>');
+    textLines.push('• <b>총 퀀트 자산 평가액: ' + formatNumber_(Math.round(grandTotalAsset)) + '원</b>');
+    textLines.push('• 누적 퀀트 계좌 수익률: <b>' + yieldSign + totalYield.toFixed(2) + '%</b>');
   }
   
   textLines.push('----------------------------------------');

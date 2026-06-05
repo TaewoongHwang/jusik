@@ -210,9 +210,11 @@ function getIntegratedMacroMarketData() {
   var holdings = [];
   try {
     collectHoldingsCurrent();
-    holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
+    var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+    var allHoldings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
       return normalizeDateValue_(row.date) === today;
     });
+    holdings = filterHoldingsByMode_(allHoldings, portMode);
   } catch(e) {}
   
   var dartAlerts = [];

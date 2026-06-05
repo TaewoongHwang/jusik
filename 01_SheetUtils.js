@@ -52,14 +52,15 @@ function appendObjectRow_(sheetName, obj) {
 }
 
 function appendObjectRows_(sheetName, objects) {
-  if (!objects || objects.length === 0) return;
-  var headers = AM_SHEET_SCHEMAS[sheetName];
-  var rows = objects.map(function(obj) {
-    return objectToSheetRow_(headers, obj || {});
-  });
-  var sheet = ensureSheet_(sheetName, headers);
-  var rowIndex = sheet.getLastRow() + 1;
-  sheet.getRange(rowIndex, 1, rows.length, headers.length).setValues(rows);
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error('데이터 쓰기 락을 획득하지 못했습니다. (대상: ' + sheetName + ')');
+  }
+  try {
+    appendObjectRowsNoLock_(sheetName, objects);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function objectToSheetRow_(headers, obj) {
@@ -156,72 +157,78 @@ function rewriteDataRows_(sheet, width, rows) {
  * 중복 수동 자산 가중평균 자동 치유 병합 엔진 (중복 데이터가 들어올 시 가중평균으로 병합)
  */
 function cleanDuplicateManualHoldings_() {
-  var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
-  var rows = readObjects_(sheetName);
-  if (rows.length === 0) return;
-  
-  var merged = {};
-  var needsRewrite = false;
-  
-  rows.forEach(function(row) {
-    var symbol = normalizeStockSymbol_(row.symbol);
-    if (!symbol) return;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error('중복 수동 자산 정리 락을 획득하지 못했습니다.');
+  }
+  try {
+    var sheetName = AM_CONFIG.SHEETS.MANUAL_HOLDINGS;
+    var rows = readObjects_(sheetName);
+    if (rows.length === 0) return;
     
-    var broker = normalizeBrokerName_(row.broker);
-    var key = broker + '_' + symbol;
+    var merged = {};
+    var needsRewrite = false;
     
-    var activeVal = String(row.active || 'Y').toUpperCase().trim();
-    var isActive = (activeVal !== 'N' && activeVal !== 'FALSE');
-    var qty = parseFloat(row.quantity || 0);
-    
-    // 💡 [수동 등록 자산 한글명 스마트 자가 치유(Self-Healing)]
-    // 종목명이 비어있거나, 종목명란에 숫자코드(660, 000660)가 오염되어 기입된 경우 KIS/Naver 실시간 한글명을 획득해 시트 자체를 영구 동적 치유함
-    var currentName = String(row.name || '').trim();
-    if (!currentName || currentName === symbol || /^[0-9]+$/.test(currentName)) {
-      var resolvedName = getStockKoreanName_(symbol, currentName);
-      if (resolvedName && resolvedName !== symbol && !/^[0-9]+$/.test(resolvedName)) {
-        row.name = resolvedName;
-        needsRewrite = true;
-      }
-    }
-    
-    if (!merged[key]) {
-      merged[key] = {
-        broker: broker,
-        symbol: symbol,
-        name: row.name,
-        quantity: qty,
-        avg_price: parseFloat(row.avg_price || 0),
-        active: isActive,
-        memo: row.memo || ''
-      };
-    } else {
-      needsRewrite = true;
-      if (isActive && qty > 0) {
-        var prev = merged[key];
-        if (prev.quantity > 0) {
-          var totalCost = (prev.quantity * prev.avg_price) + (qty * parseFloat(row.avg_price || 0));
-          var totalQty = prev.quantity + qty;
-          prev.quantity = totalQty;
-          prev.avg_price = totalQty > 0 ? Math.round(totalCost / totalQty) : 0;
-          prev.memo = '자동 가중평균 병합';
-        } else {
-          prev.quantity = qty;
-          prev.avg_price = parseFloat(row.avg_price || 0);
-          prev.active = true;
-          prev.memo = row.memo || '';
+    rows.forEach(function(row) {
+      var symbol = normalizeStockSymbol_(row.symbol);
+      if (!symbol) return;
+      
+      var broker = normalizeBrokerName_(row.broker);
+      var key = broker + '_' + symbol;
+      
+      var activeVal = String(row.active || 'Y').toUpperCase().trim();
+      var isActive = (activeVal !== 'N' && activeVal !== 'FALSE');
+      var qty = parseFloat(row.quantity || 0);
+      
+      // 💡 [수동 등록 자산 한글명 스마트 자가 치유(Self-Healing)]
+      // 종목명이 비어있거나, 종목명란에 숫자코드(660, 000660)가 오염되어 기입된 경우 KIS/Naver 실시간 한글명을 획득해 시트 자체를 영구 동적 치유함
+      var currentName = String(row.name || '').trim();
+      if (!currentName || currentName === symbol || /^[0-9]+$/.test(currentName)) {
+        var resolvedName = getStockKoreanName_(symbol, currentName);
+        if (resolvedName && resolvedName !== symbol && !/^[0-9]+$/.test(resolvedName)) {
+          row.name = resolvedName;
+          needsRewrite = true;
         }
       }
+      
+      if (!merged[key]) {
+        merged[key] = {
+          broker: broker,
+          symbol: symbol,
+          name: row.name,
+          quantity: qty,
+          avg_price: parseFloat(row.avg_price || 0),
+          active: isActive,
+          memo: row.memo || ''
+        };
+      } else {
+        needsRewrite = true;
+        if (isActive && qty > 0) {
+          var prev = merged[key];
+          if (prev.quantity > 0) {
+            var totalCost = (prev.quantity * prev.avg_price) + (qty * parseFloat(row.avg_price || 0));
+            var totalQty = prev.quantity + qty;
+            prev.quantity = totalQty;
+            prev.avg_price = totalQty > 0 ? Math.round(totalCost / totalQty) : 0;
+            prev.memo = '자동 가중평균 병합';
+          } else {
+            prev.quantity = qty;
+            prev.avg_price = parseFloat(row.avg_price || 0);
+            prev.active = true;
+            prev.memo = row.memo || '';
+          }
+        }
+      }
+    });
+    
+    if (needsRewrite) {
+      var mergedList = Object.keys(merged).map(function(k) { return merged[k]; });
+      clearDataRows_(sheetName);
+      appendObjectRowsNoLock_(sheetName, mergedList); // 락이 없는 버전을 호출하여 중첩 데드락 방지!
+      logInfo_('sheet_utils', 'Cleaned duplicate manual holdings', { merged_count: mergedList.length });
     }
-  });
-  
-  if (needsRewrite) {
-    var mergedList = Object.keys(merged).map(function(k) { return merged[k]; });
-    var headers = AM_SHEET_SCHEMAS[sheetName];
-    var sheet = ensureSheet_(sheetName, headers);
-    clearDataRows_(sheetName);
-    appendObjectRows_(sheetName, mergedList);
-    logInfo_('sheet_utils', 'Cleaned duplicate manual holdings', { merged_count: mergedList.length });
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -330,14 +337,15 @@ function logWarn_(module, message, details) {
 
 function writeLog_(level, module, message, details) {
   try {
-    ensureAllSheets_();
-    appendObjectRow_(AM_CONFIG.SHEETS.LOGS, {
+    var sheetName = AM_CONFIG.SHEETS.LOGS;
+    ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
+    appendObjectRowsNoLock_(sheetName, [{
       timestamp: amNowString_(),
       level: level,
       module: module,
       message: message,
       details: typeof details === 'object' ? JSON.stringify(details) : String(details || '')
-    });
+    }]);
   } catch(e) {
     console.warn('Logging failed: ' + e.message);
   }
@@ -549,26 +557,18 @@ function cleanupLegacySheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheets = ss.getSheets();
   
-  var coreSheets = [
-    AM_CONFIG.SHEETS.SETTINGS,
-    AM_CONFIG.SHEETS.MANUAL_HOLDINGS,
-    AM_CONFIG.SHEETS.HOLDINGS_CURRENT,
-    AM_CONFIG.SHEETS.PAPER_PORTFOLIO,
-    AM_CONFIG.SHEETS.PAPER_LEDGER,
-    AM_CONFIG.SHEETS.REAL_LEDGER,
-    AM_CONFIG.SHEETS.LOGS,
-    AM_CONFIG.SHEETS.QUANT_SETTINGS,
-    AM_CONFIG.SHEETS.QUANT_SIGNALS
+  var legacySheets = [
+    'old_portfolio',
+    'old_signals',
+    'legacy_logs'
   ];
   
   var deletedCount = 0;
   var deletedNames = [];
   
-  ensureAllSheets_();
-  
   sheets.forEach(function(sheet) {
     var name = sheet.getName();
-    if (coreSheets.indexOf(name) < 0) {
+    if (legacySheets.indexOf(name) >= 0) {
       try {
         ss.deleteSheet(sheet);
         deletedCount++;
@@ -955,4 +955,44 @@ function debugTelegramStatus() {
     token_prefix: token.substring(0, 6),
     webhook_info: json
   }, null, 2);
+}
+
+/**
+ * 보유 자산 행 배열을 모드(REAL/MOCK/QUANT_DOM/QUANT_US)에 따라 필터링합니다.
+ */
+function filterHoldingsByMode_(rows, mode) {
+  var normalizedMode = String(mode || 'REAL').toUpperCase();
+
+  return rows.filter(function(row) {
+    var source = String(row.source || '');
+
+    if (normalizedMode === 'MOCK') {
+      // KIS API 모의계좌
+      return source.indexOf('mock_') === 0;
+    } else if (normalizedMode === 'QUANT_DOM') {
+      // 국내 퀀트 모의투자
+      return source === 'paper_trading_dom';
+    } else if (normalizedMode === 'QUANT_US') {
+      // 해외 퀀트 모의투자
+      return source === 'paper_trading_us';
+    } else {
+      // REAL 모드 (실제 KIS 계좌 및 수동 등록 자산 등)
+      return (
+        (source.indexOf('kis') === 0 && source.indexOf('kis_mock') === -1 && source.indexOf('mock_') === -1) ||
+        source.indexOf('manual_') === 0 ||
+        source === 'overseas'
+      );
+    }
+  });
+}
+
+function appendObjectRowsNoLock_(sheetName, objects) {
+  if (!objects || objects.length === 0) return;
+  var headers = AM_SHEET_SCHEMAS[sheetName];
+  var rows = objects.map(function(obj) {
+    return objectToSheetRow_(headers, obj || {});
+  });
+  var sheet = ensureSheet_(sheetName, headers);
+  var rowIndex = sheet.getLastRow() + 1;
+  sheet.getRange(rowIndex, 1, rows.length, headers.length).setValues(rows);
 }

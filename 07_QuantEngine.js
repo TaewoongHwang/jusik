@@ -152,17 +152,17 @@ function calculateAssetMomentumScore_(symbol) {
   
   var r1 = p1 > 0 ? ((p0 - p1) / p1 * 100) : 0;
   var r3 = p3 > 0 ? ((p0 - p3) / p3 * 100) : 0;
-  var r6 = p6 > 0 ? ((p0 - r6) / p6 * 100) : (p6 > 0 ? ((p0 - p6) / p6 * 100) : 0); // 널가드 적용
+  var r6 = p6 > 0 ? ((p0 - p6) / p6 * 100) : 0;
   var r12 = p12 > 0 ? ((p0 - p12) / p12 * 100) : 0;
   
-  var score = 12 * r1 + 4 * r3 + 2 * (p6 > 0 ? ((p0 - p6) / p6 * 100) : 0) + 1 * r12;
+  var score = 12 * r1 + 4 * r3 + 2 * r6 + 1 * r12;
   
   return {
     symbol: symbol,
     current_price: p0,
     r1: roundNumber_(r1, 2),
     r3: roundNumber_(r3, 2),
-    r6: roundNumber_(p6 > 0 ? ((p0 - p6) / p6 * 100) : 0, 2),
+    r6: roundNumber_(r6, 2),
     r12: roundNumber_(r12, 2),
     score: roundNumber_(score, 2),
     is_mock: histData.is_mock,
@@ -508,8 +508,10 @@ function calculate50DayMomentum_(symbol) {
 function getQuantStockScoring(symbolsList) {
   var symbols = symbolsList || [];
   if (symbols.length === 0) {
-    var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
+    var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+    var allHoldings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
     var today = amTodayString_();
+    var holdings = filterHoldingsByMode_(allHoldings, portMode);
     var uniqueSymbols = {};
     holdings.forEach(function(h) {
       var sym = normalizeStockSymbol_(h.symbol);
@@ -676,11 +678,26 @@ function getQuantStockScoring(symbolsList) {
  * 🚀 월간 정기 리밸런싱 실행 및 시그널 시트 저장
  */
 function runMonthlyQuantRebalancing() {
-  ensureAllSheets_();
-  var today = amTodayString_();
-  
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('다른 리밸런싱 작업이 실행 중입니다.');
+  }
   try {
+    ensureAllSheets_();
+    var today = amTodayString_();
+    
+    // 당월 중복 실행 차단 장치
+    var runKey = 'QUANT_REBALANCE_LAST_RUN_' + today.substring(0, 7).replace('-', '_');
+    var lastRun = getScriptProperty_(runKey, '');
+    if (lastRun === 'SUCCESS') {
+      logWarn_('quant_rebalancing', 'Monthly quant rebalancing already executed successfully for this month: ' + runKey);
+      return;
+    }
+    
     var vaa = getVaaStrategySignal();
+    if (vaa && vaa.is_mock) {
+      throw new Error('실시간 퀀트 데이터가 없어 자동 리밸런싱을 중단합니다.');
+    }
     var detailJson = {
       regime: vaa.regime,
       aggressive_scores: vaa.aggressive_scores,
@@ -764,11 +781,14 @@ function runMonthlyQuantRebalancing() {
     }
     
     sendTelegramMessage(msg + paperLogStr + vaaWarning);
+    setScriptProperty_(runKey, 'SUCCESS');
     logInfo_('quant_rebalancing', 'Successfully executed and logged monthly quant rebalancing', { date: today });
     
   } catch(e) {
     logWarn_('quant_rebalancing', 'Failed to run monthly quant rebalancing', { error: e.message });
     sendTelegramMessage('⚠️ [퀀트 엔진 경보]\n정기 퀀트 리밸런싱 신호 계산 도중 오류가 감지되었습니다: ' + e.message);
+  } finally {
+    lock.releaseLock();
   }
 }
 
