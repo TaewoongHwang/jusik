@@ -397,6 +397,7 @@ function onOpen() {
   menu.addSeparator();
   menu.addItem('📈 실계좌(REAL) 운용 모드 전환', 'menuSetModeReal');
   menu.addItem('📈 모의투자(PAPER) 운용 모드 전환', 'menuSetModePaper');
+  menu.addItem('📈 API 모의투자(MOCK) 운용 모드 전환', 'menuSetModeMock');
   menu.addSeparator();
   menu.addItem('⚙️ 퀀트 50대 우량주 팩터 DB 즉시 갱신', 'menuUpdateQuantUniverseDatabase');
   menu.addSeparator();
@@ -450,6 +451,16 @@ function menuSetModePaper() {
     setScriptProperty_('PORTFOLIO_MODE', 'PAPER');
     collectHoldingsCurrent();
     safeUiAlert_('🔄 [운용 모드 전환 완료]\n\n포트폴리오 주식 운용 모드가 가상 시장가 모의투자 모드인 [PAPER]로 즉각 전환되었습니다!');
+  } catch(e) {
+    safeUiAlert_('❌ [모드 전환 실패]: ' + e.message);
+  }
+}
+
+function menuSetModeMock() {
+  try {
+    setScriptProperty_('PORTFOLIO_MODE', 'MOCK');
+    collectHoldingsCurrent();
+    safeUiAlert_('🔄 [운용 모드 전환 완료]\n\n포트폴리오 주식 운용 모드가 실제 한투 API 연동 모의투자 모드인 [MOCK]으로 즉각 전환되었습니다!');
   } catch(e) {
     safeUiAlert_('❌ [모드 전환 실패]: ' + e.message);
   }
@@ -630,6 +641,11 @@ function syncPropertiesFromSheet() {
     { key: 'KIS_ISA_ACNT_PRDT_CD', desc: '한국투자증권 ISA 상품코드 2자리 (보통 03)' },
     { key: 'KIS_ISA_APP_KEY', desc: '한국투자증권 ISA 전용 AppKey (일반계좌와 같으면 공란)' },
     { key: 'KIS_ISA_APP_SECRET', desc: '한국투자증권 ISA 전용 AppSecret (일반계좌와 같으면 공란)' },
+    { key: 'KIS_MOCK_CANO', desc: '한국투자증권 모의투자 계좌번호 8자리' },
+    { key: 'KIS_MOCK_ACNT_PRDT_CD', desc: '한국투자증권 모의투자 상품코드 2자리 (보통 01)' },
+    { key: 'KIS_MOCK_APP_KEY', desc: '한국투자증권 모의투자 전용 AppKey' },
+    { key: 'KIS_MOCK_APP_SECRET', desc: '한국투자증권 모의투자 전용 AppSecret' },
+    { key: 'KIS_MOCK_BASE_URL', desc: '한국투자증권 모의투자 API 주소 (https://openapivts.koreainvestment.com:29443)' },
     { key: 'DART_API_KEY', desc: '국민연금/DART 기업 공시 분석 API Key' },
     { key: 'ECOS_API_KEY', desc: '한국은행 경제통계시스템 ECOS API Key' },
     { key: 'FRED_API_KEY', desc: '미국 세인트루이스 연준 거시경제 FRED API Key' },
@@ -768,7 +784,7 @@ function backupPropertiesToSheet() {
   var finalRows = [];
   
   // 💡 [보안 마스킹 강제 집행] 극비 자격증명은 시트에 평문 노출을 방지하기 위해 마스킹
-  var sensitiveKeys = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_ACCESS_TOKEN', 'GEMINI_API_KEY', 'TELEGRAM_BOT_TOKEN', 'KIS_ISA_APP_KEY', 'KIS_ISA_APP_SECRET'];
+  var sensitiveKeys = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_ACCESS_TOKEN', 'GEMINI_API_KEY', 'TELEGRAM_BOT_TOKEN', 'KIS_ISA_APP_KEY', 'KIS_ISA_APP_SECRET', 'KIS_MOCK_APP_KEY', 'KIS_MOCK_APP_SECRET'];
   
   // 1. 기존 시트에 있던 키들을 먼저 백업값 기준으로 최신화하여 순서 유지
   currentRows.forEach(function(row) {

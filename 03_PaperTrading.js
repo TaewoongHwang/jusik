@@ -192,12 +192,13 @@ function collectHoldingsCurrent(forceRefresh) {
   try { cleanDuplicateManualHoldings_(); } catch(e) {}
   
   var today = amTodayString_();
-  var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
-  var isRealMode = (portMode === 'real');
+  var isMockMode = (portMode === 'mock');
   
-  // 기존 오늘자 보유 자산 캐시 일단 청소 (모드별로 격리하여 삭제함으로써 REAL과 PAPER 모드 간 데이터 유실 차단)
+  // 기존 오늘자 보유 자산 캐시 일단 청소 (모드별로 격리하여 삭제함으로써 REAL, PAPER, MOCK 모드 간 데이터 유실 차단)
   if (isRealMode) {
     deleteHoldingsCurrentBySources_(today, ['kis', 'manual_', 'overseas']);
+  } else if (isMockMode) {
+    deleteHoldingsCurrentBySources_(today, ['mock_trading']);
   } else {
     deleteHoldingsCurrentBySources_(today, ['paper_trading']);
   }
@@ -670,6 +671,63 @@ function collectHoldingsCurrent(forceRefresh) {
     }
     
     logInfo_('portfolio_collector', 'Real portfolio collected successfully', { holdings_count: assets.length, total_eval: totalEval });
+  } else if (isMockMode) {
+    // 💡 KIS API 실제 모의투자 모드
+    var totalPurchase = 0;
+    var totalEval = 0;
+    var assets = [];
+    var account = getKisAccountConfig_();
+    
+    var mockAuth = (account.mockAppKey && account.mockAppSecret) ? {
+      appKey: account.mockAppKey,
+      appSecret: account.mockAppSecret,
+      baseUrl: account.mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
+    } : null;
+    
+    try {
+      var response = fetchKisDomesticAccountBalance_(account.mockCano, account.mockProductCode, mockAuth);
+      var normalized = normalizeKisAccountBalance_(response, 'mock_trading');
+      normalized.holdings.forEach(function(h) {
+        totalPurchase += h.purchase_amount;
+        totalEval += h.eval_amount;
+        assets.push(h);
+      });
+      
+      // 모의투자 API 예수금 가산
+      var cash = normalized.snapshot.cash_amount || 0;
+      if (cash > 0) {
+        totalPurchase += cash;
+        totalEval += cash;
+        assets.push({
+          date: today,
+          symbol: 'CASH',
+          name: '모의투자 예수금 (API)',
+          quantity: cash,
+          avg_price: 1,
+          current_price: 1,
+          purchase_amount: cash,
+          eval_amount: cash,
+          profit_loss_amount: 0,
+          profit_loss_pct: 0,
+          portfolio_weight_pct: 0,
+          source: 'mock_trading_cash',
+          currency: 'KRW'
+        });
+      }
+    } catch(e) {
+      logWarn_('portfolio_collector', 'Failed to fetch KIS Mock account balance', { error: e.message });
+    }
+    
+    // 가중치 업데이트 및 최종 저장
+    if (assets.length > 0) {
+      assets.forEach(function(a) {
+        a.portfolio_weight_pct = totalEval > 0 ? roundNumber_(a.eval_amount / totalEval * 100, 2) : 0;
+        a.profit_loss_pct = roundNumber_(a.profit_loss_pct, 2);
+      });
+      appendObjectRows_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT, assets);
+    }
+    
+    logInfo_('portfolio_collector', 'Mock API portfolio collected successfully', { holdings_count: assets.length, total_eval: totalEval });
   } else {
     // 💡 PAPER 모의투자 모드
     try {
@@ -920,13 +978,94 @@ function rewriteHoldingWeightsForDate_(today) {
 // 🚀 초정밀 모의투자(Paper) 체결 집계 엔진
 // ==================================================
 
+function executeMockOrder_(symbol, actionType, qty, customPrice) {
+  var today = amTodayString_();
+  var cleanSymbol = normalizeStockSymbol_(symbol);
+  
+  var account = getKisAccountConfig_();
+  var mockAuth = (account.mockAppKey && account.mockAppSecret) ? {
+    appKey: account.mockAppKey,
+    appSecret: account.mockAppSecret,
+    baseUrl: account.mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
+  } : null;
+  
+  if (!account.mockCano) {
+    throw new Error('한투 모의투자 계좌번호(KIS_MOCK_CANO)가 설정되지 않았습니다.');
+  }
+  
+  var trId = (actionType === 'BUY') ? 'VTTC0802U' : 'VTTC0801U';
+  
+  var quote = null;
+  try {
+    quote = fetchKisCurrentPrice_(cleanSymbol);
+  } catch(e) {}
+  
+  var stockName = getStockKoreanName_(cleanSymbol, quote ? quote.name : cleanSymbol);
+  
+  var payload = {
+    CANO: account.mockCano,
+    ACNT_PRDT_CD: account.mockProductCode || '01',
+    PDNO: cleanSymbol,
+    ORD_DVSN: '01', // 시장가로 전송
+    ORD_QTY: String(qty),
+    ORD_UNPR: customPrice > 0 ? String(customPrice) : '0'
+  };
+  
+  if (customPrice > 0) {
+    payload.ORD_DVSN = '00'; // 지정가
+  }
+  
+  var response = null;
+  try {
+    response = kisPost_('/uapi/domestic-stock/v1/trading/order-cash', payload, trId, mockAuth);
+  } catch(err) {
+    logWarn_('mock_trading', 'Mock order submission failed', { error: err.message });
+    throw new Error('한투 모의투자 API 주문 전송 실패: ' + err.message);
+  }
+  
+  var output = response.output || {};
+  var orderNo = output.ODNO || 'N/A';
+  
+  var executionPrice = customPrice > 0 ? customPrice : (quote ? quote.close : 0);
+  var amount = executionPrice * qty;
+  
+  appendObjectRow_(AM_CONFIG.SHEETS.PAPER_LEDGER, {
+    date: today,
+    symbol: cleanSymbol,
+    name: stockName,
+    action_type: actionType,
+    price: executionPrice,
+    quantity: qty,
+    amount: amount,
+    reason: '한투 API 모의 주문 송신 완료 (주문번호: ' + orderNo + ')',
+    created_at: amNowString_()
+  });
+  
+  logInfo_('mock_trading', 'Submitted KIS mock order successfully', { symbol: cleanSymbol, action: actionType, qty: qty, order_no: orderNo });
+  
+  collectHoldingsCurrent();
+  
+  return {
+    success: true,
+    name: stockName,
+    executionPrice: executionPrice,
+    amount: amount,
+    cash: 0,
+    activePositions: []
+  };
+}
+
 function executePaperOrder_(symbol, actionType, qty, customPrice, isAutoRebal) {
   var today = amTodayString_();
   var cleanSymbol = normalizeStockSymbol_(symbol);
   var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
   
+  if (portMode === 'mock') {
+    return executeMockOrder_(symbol, actionType, qty, customPrice);
+  }
+  
   if (portMode === 'real' && isAutoRebal !== true) {
-    throw new Error('현재 운용 모드가 실제계좌(REAL)입니다. 모의투자 체결을 집행할 수 없습니다. /mode paper 명령어로 먼저 전환하세요.');
+    throw new Error('현재 운용 모드가 실제계좌(REAL)입니다. 모의투자 체결을 집행할 수 없습니다. /mode paper 또는 /mode mock 명령어로 먼저 전환하세요.');
   }
   
   var isCoin = (String(cleanSymbol).indexOf('KRW-') === 0 || /^[A-Z]{3,4}$/.test(cleanSymbol) === false);

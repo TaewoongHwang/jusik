@@ -1,11 +1,51 @@
+function kisPost_(path, payload, trId, customAuth) {
+  var baseUrl = String(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_BASE_URL, AM_CONFIG.DEFAULT_KIS_BASE_URL)).trim();
+  var appKey = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_KEY, ''));
+  var appSecret = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_SECRET, ''));
+  
+  if (customAuth) {
+    if (customAuth.appKey && customAuth.appSecret) {
+      appKey = sanitizeKey_(customAuth.appKey);
+      appSecret = sanitizeKey_(customAuth.appSecret);
+    }
+    if (customAuth.baseUrl) {
+      baseUrl = String(customAuth.baseUrl).trim();
+    }
+  }
+  
+  if (!appKey || !appSecret) {
+    throw new Error('KIS_APP_KEY or KIS_APP_SECRET is missing. Please configure them.');
+  }
+  
+  var url = baseUrl + path;
+  
+  return apiFetchJson_(url, {
+    method: 'post',
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      authorization: 'Bearer ' + getKisAccessToken_(customAuth),
+      appkey: appKey,
+      appsecret: appSecret,
+      tr_id: trId
+    },
+    payload: JSON.stringify(payload || {}),
+    muteHttpExceptions: true
+  });
+}
+
 function kisGet_(path, params, trId, customAuth) {
   var baseUrl = String(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_BASE_URL, AM_CONFIG.DEFAULT_KIS_BASE_URL)).trim();
   var appKey = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_KEY, ''));
   var appSecret = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_SECRET, ''));
   
-  if (customAuth && customAuth.appKey && customAuth.appSecret) {
-    appKey = sanitizeKey_(customAuth.appKey);
-    appSecret = sanitizeKey_(customAuth.appSecret);
+  if (customAuth) {
+    if (customAuth.appKey && customAuth.appSecret) {
+      appKey = sanitizeKey_(customAuth.appKey);
+      appSecret = sanitizeKey_(customAuth.appSecret);
+    }
+    if (customAuth.baseUrl) {
+      baseUrl = String(customAuth.baseUrl).trim();
+    }
   }
   
   if (!appKey || !appSecret) {
@@ -50,10 +90,16 @@ function apiFetchJson_(url, options) {
 function getKisAccessToken_(customAuth) {
   var appKey = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_KEY, ''));
   var appSecret = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_SECRET, ''));
+  var baseUrl = String(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_BASE_URL, AM_CONFIG.DEFAULT_KIS_BASE_URL)).trim();
   
-  if (customAuth && customAuth.appKey && customAuth.appSecret) {
-    appKey = sanitizeKey_(customAuth.appKey);
-    appSecret = sanitizeKey_(customAuth.appSecret);
+  if (customAuth) {
+    if (customAuth.appKey && customAuth.appSecret) {
+      appKey = sanitizeKey_(customAuth.appKey);
+      appSecret = sanitizeKey_(customAuth.appSecret);
+    }
+    if (customAuth.baseUrl) {
+      baseUrl = String(customAuth.baseUrl).trim();
+    }
   }
   
   // AppKey 별로 고유한 프로퍼티 캐시 키 생성 (뒤 6자리만 섞음)
@@ -68,9 +114,6 @@ function getKisAccessToken_(customAuth) {
   if (token && expiresAt > now + 600000) { // 10분 마진
     return token;
   }
-  
-  // 신규 토큰 발급
-  var baseUrl = String(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_BASE_URL, AM_CONFIG.DEFAULT_KIS_BASE_URL)).trim();
   
   if (!appKey || !appSecret) {
     throw new Error('KIS_APP_KEY or KIS_APP_SECRET is missing for access token.');
@@ -166,8 +209,15 @@ function getKisAccountConfig_() {
   var isaAppKey = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_APP_KEY) || '';
   var isaAppSecret = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ISA_APP_SECRET) || '';
   
-  // 🚀 [자율 동기화 세이프 가드] 만약 Properties 에 ISA 정보가 비어있다면 settings 시트에서 즉시 자동 룩업 동기화
-  if (!isaCano || !isaProductCode) {
+  // 모의투자 속성 로드
+  var mockCano = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_MOCK_CANO) || '';
+  var mockProductCode = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_MOCK_ACNT_PRDT_CD) || '';
+  var mockAppKey = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_MOCK_APP_KEY) || '';
+  var mockAppSecret = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_MOCK_APP_SECRET) || '';
+  var mockBaseUrl = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_MOCK_BASE_URL) || '';
+  
+  // 🚀 [자율 동기화 세이프 가드] 만약 Properties 에 ISA 또는 MOCK 정보가 비어있다면 settings 시트에서 즉시 자동 룩업 동기화
+  if (!isaCano || !isaProductCode || !mockCano || !mockProductCode) {
     try {
       var settingsRows = readObjects_(AM_CONFIG.SHEETS.SETTINGS) || [];
       var sheetProps = {};
@@ -197,12 +247,37 @@ function getKisAccountConfig_() {
             sheetProps[key] = val;
             hasUpdates = true;
           }
+          if (key === 'KIS_MOCK_CANO' && !mockCano) {
+            mockCano = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+          if (key === 'KIS_MOCK_ACNT_PRDT_CD' && !mockProductCode) {
+            mockProductCode = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+          if (key === 'KIS_MOCK_APP_KEY' && !mockAppKey) {
+            mockAppKey = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+          if (key === 'KIS_MOCK_APP_SECRET' && !mockAppSecret) {
+            mockAppSecret = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
+          if (key === 'KIS_MOCK_BASE_URL' && !mockBaseUrl) {
+            mockBaseUrl = val;
+            sheetProps[key] = val;
+            hasUpdates = true;
+          }
         }
       });
       
       if (hasUpdates) {
         service.setProperties(sheetProps, false);
-        logInfo_('properties_sync', 'Auto-synced ISA account config from Settings sheet', sheetProps);
+        logInfo_('properties_sync', 'Auto-synced ISA/MOCK account config from Settings sheet', sheetProps);
       }
     } catch(syncErr) {
       logWarn_('properties_sync', 'Auto-sync config failed', { error: syncErr.message });
@@ -212,15 +287,19 @@ function getKisAccountConfig_() {
   // 🚀 [강화된 계좌번호 및 상품코드 스마트 정제 및 추출]
   var cleanNormal = cleanAndExtractKisAccount_(cano, accountProductCode);
   var cleanIsa = cleanAndExtractKisAccount_(isaCano, isaProductCode);
+  var cleanMock = cleanAndExtractKisAccount_(mockCano, mockProductCode);
   
   // 원격 추적성을 위한 안전 마스킹 로깅 (앞 4자리 노출)
   var debugNormalCano = cleanNormal.cano ? (cleanNormal.cano.substring(0, 4) + '****') : 'MISSING';
   var debugIsaCano = cleanIsa.cano ? (cleanIsa.cano.substring(0, 4) + '****') : 'MISSING';
+  var debugMockCano = cleanMock.cano ? (cleanMock.cano.substring(0, 4) + '****') : 'MISSING';
   logInfo_('kis_client', 'Resolved sanitized KIS account configuration', {
     cano: debugNormalCano,
     productCode: cleanNormal.productCode,
     isaCano: debugIsaCano,
-    isaProductCode: cleanIsa.productCode
+    isaProductCode: cleanIsa.productCode,
+    mockCano: debugMockCano,
+    mockProductCode: cleanMock.productCode
   });
   
   return {
@@ -229,7 +308,12 @@ function getKisAccountConfig_() {
     isaCano: cleanIsa.cano,
     isaProductCode: cleanIsa.productCode,
     isaAppKey: sanitizeKey_(isaAppKey),
-    isaAppSecret: sanitizeKey_(isaAppSecret)
+    isaAppSecret: sanitizeKey_(isaAppSecret),
+    mockCano: cleanMock.cano,
+    mockProductCode: cleanMock.productCode || '01',
+    mockAppKey: sanitizeKey_(mockAppKey),
+    mockAppSecret: sanitizeKey_(mockAppSecret),
+    mockBaseUrl: mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
   };
 }
 

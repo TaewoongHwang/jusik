@@ -128,7 +128,7 @@ function doPost(e) {
         '',
         '📊 <b>자산 모니터링:</b>',
         '• <code>/holdings</code> 또는 <code>/잔고</code> : 실시간 자산 현황 조회',
-        '• <code>/mode [real|paper]</code> : 투자 운용 모드 전환 (실계좌 / 모의투자)',
+        '• <code>/mode [real|paper|mock]</code> : 투자 운용 모드 전환 (실계좌 / 가상매매 / API 모의투자)',
         '',
         '📥 <b>수동 자산 직접 기록 (REAL 모드용):</b>',
         '• <code>/set [증권사] [종목코드] [최종수량] [최종평단가]</code> : 수동 자산 갱신',
@@ -250,6 +250,8 @@ function doPost(e) {
           var src = String(row.source || '').trim();
           if (portMode === 'PAPER') {
             return (src.indexOf('paper_') === 0);
+          } else if (portMode === 'MOCK') {
+            return (src.indexOf('mock_') === 0);
           } else {
             return (src.indexOf('kis') === 0 || src.indexOf('manual_') === 0 || src === 'overseas');
           }
@@ -283,6 +285,7 @@ function doPost(e) {
             var profitSign = h.profit_loss_pct >= 0 ? '+' : '';
             var sourceText = String(h.source).indexOf('manual_') === 0 ? '수동-' + String(h.source).replace('manual_', '') : '계좌';
             if (h.source === 'paper_trading') sourceText = '모의';
+            if (h.source === 'mock_trading') sourceText = 'API 모의';
             
             textLines.push(
               '• <b>' + h.name + '</b> (' + h.symbol + ') | ' + sourceText + '\n' +
@@ -313,14 +316,18 @@ function doPost(e) {
     else if (command === '/mode') {
       var arg = text.split(' ')[1];
       if (!arg) {
-        // 인자가 없을 경우 현재 모드를 토글!
+        // 인자가 없을 경우 현재 모드를 토글! (REAL -> PAPER -> MOCK -> REAL)
         var currentMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toUpperCase();
-        var nextMode = (currentMode === 'REAL') ? 'PAPER' : 'REAL';
+        var nextMode = 'REAL';
+        if (currentMode === 'REAL') nextMode = 'PAPER';
+        else if (currentMode === 'PAPER') nextMode = 'MOCK';
+        else nextMode = 'REAL';
+        
         setScriptProperty_('PORTFOLIO_MODE', nextMode);
         sendTelegramMessage('🔄 <b>[운용 모드 전환]</b>\n\n포트폴리오 주식 운용 모드가 <b>' + nextMode + '</b>(으)로 즉각 토글 변경되었습니다.');
         collectHoldingsCurrent();
-      } else if (arg.toLowerCase() !== 'real' && arg.toLowerCase() !== 'paper') {
-        sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n👉 <b>올바른 형식:</b>\n<code>/mode real</code> 또는 <code>/mode paper</code>');
+      } else if (arg.toLowerCase() !== 'real' && arg.toLowerCase() !== 'paper' && arg.toLowerCase() !== 'mock') {
+        sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n👉 <b>올바른 형식:</b>\n<code>/mode real</code>, <code>/mode paper</code> 또는 <code>/mode mock</code>');
       } else {
         var mode = arg.toUpperCase();
         setScriptProperty_('PORTFOLIO_MODE', mode);
@@ -443,9 +450,14 @@ function doPost(e) {
         } else if (rawArgs[2] && (isNaN(customPrice) || !isFinite(customPrice) || customPrice < 0)) {
           sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n지정가는 0 이상의 숫자여야 합니다.');
         } else {
-          sendTelegramMessage('📥 <b>' + symbol + '</b> 가상 매수 체결 요청을 처리하고 있습니다...');
+          sendTelegramMessage('📥 <b>' + symbol + '</b> 모의 매수 요청을 처리하고 있습니다...');
           var res = executePaperOrder_(symbol, 'BUY', qty, customPrice);
-          sendTelegramMessage('🔺 <b>[모의투자 매수 체결 완료]</b>\n\n• 종목명: <b>' + res.name + '</b>\n• 체결가: <b>' + formatNumber_(res.executionPrice) + '원</b> (슬리피지 0.1% 반영)\n• 수량: <b>' + formatNumber_(qty) + '주</b> | 체결총액: <b>' + formatNumber_(res.amount) + '원</b>\n• 가상 예수금 잔고: <b>' + formatNumber_(Math.round(res.cash)) + '원</b>');
+          var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toUpperCase();
+          if (portMode === 'MOCK') {
+            sendTelegramMessage('🔺 <b>[한투 API 모의매수 주문 송신]</b>\n\n• 종목명: <b>' + res.name + '</b> (' + symbol + ')\n• 주문 수량: <b>' + formatNumber_(qty) + '주</b>\n• 시장가(또는 지정가) 주문이 정상적으로 송신되었습니다. 체결 결과는 잠시 후 대시보드 및 잔고조회(/holdings)로 반영됩니다.');
+          } else {
+            sendTelegramMessage('🔺 <b>[모의투자 매수 체결 완료]</b>\n\n• 종목명: <b>' + res.name + '</b>\n• 체결가: <b>' + formatNumber_(res.executionPrice) + '원</b> (슬리피지 0.1% 반영)\n• 수량: <b>' + formatNumber_(qty) + '주</b> | 체결총액: <b>' + formatNumber_(res.amount) + '원</b>\n• 가상 예수금 잔고: <b>' + formatNumber_(Math.round(res.cash)) + '원</b>');
+          }
         }
       }
     }
@@ -463,9 +475,14 @@ function doPost(e) {
         } else if (rawArgs[2] && (isNaN(customPrice) || !isFinite(customPrice) || customPrice < 0)) {
           sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n지정가는 0 이상의 숫자여야 합니다.');
         } else {
-          sendTelegramMessage('📥 <b>' + symbol + '</b> 가상 매도 체결 요청을 처리하고 있습니다...');
+          sendTelegramMessage('📥 <b>' + symbol + '</b> 모의 매도 요청을 처리하고 있습니다...');
           var res = executePaperOrder_(symbol, 'SELL', qty, customPrice);
-          sendTelegramMessage('🔻 <b>[모의투자 매도 청산 완료]</b>\n\n• 종목명: <b>' + res.name + '</b>\n• 체결가: <b>' + formatNumber_(res.executionPrice) + '원</b> (슬리피지 0.1% 반영)\n• 수량: <b>' + formatNumber_(qty) + '주</b> | 정산금액: <b>' + formatNumber_(res.amount) + '원</b>\n• 가상 예수금 잔고: <b>' + formatNumber_(Math.round(res.cash)) + '원</b>');
+          var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toUpperCase();
+          if (portMode === 'MOCK') {
+            sendTelegramMessage('🔻 <b>[한투 API 모의매도 주문 송신]</b>\n\n• 종목명: <b>' + res.name + '</b> (' + symbol + ')\n• 주문 수량: <b>' + formatNumber_(qty) + '주</b>\n• 시장가(또는 지정가) 주문이 정상적으로 송신되었습니다. 체결 결과는 잠시 후 대시보드 및 잔고조회(/holdings)로 반영됩니다.');
+          } else {
+            sendTelegramMessage('🔻 <b>[모의투자 매도 청산 완료]</b>\n\n• 종목명: <b>' + res.name + '</b>\n• 체결가: <b>' + formatNumber_(res.executionPrice) + '원</b> (슬리피지 0.1% 반영)\n• 수량: <b>' + formatNumber_(qty) + '주</b> | 정산금액: <b>' + formatNumber_(res.amount) + '원</b>\n• 가상 예수금 잔고: <b>' + formatNumber_(Math.round(res.cash)) + '원</b>');
+          }
         }
       }
     }
