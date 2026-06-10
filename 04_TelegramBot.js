@@ -1790,7 +1790,7 @@ function callGeminiWithSearchGrounding_(prompt) {
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     tools: [{
-      googleSearch: {} // 🚀 구글 검색 그라운딩 도구 장착
+      google_search: {} // 🚀 구글 검색 그라운딩 도구 장착
     }],
     generationConfig: {
       temperature: 0.15
