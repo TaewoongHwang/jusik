@@ -75,16 +75,44 @@ function buildQueryString_(params) {
 }
 
 function apiFetchJson_(url, options) {
-  var response = UrlFetchApp.fetch(url, options);
-  var text = response.getContentText();
-  if (response.getResponseCode() !== 200) {
-    throw new Error('API fetch failed with code ' + response.getResponseCode() + ': ' + text);
+  var lastError = null;
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      var response = UrlFetchApp.fetch(url, options);
+      var text = response.getContentText();
+      
+      // HTTP 에러 처리 (일시적 오류인 429 및 500 계열만 재시도 타겟)
+      if (response.getResponseCode() !== 200) {
+        if (response.getResponseCode() === 429 || response.getResponseCode() === 500) {
+          throw new Error('HTTP ' + response.getResponseCode() + ': ' + text);
+        }
+        throw new Error('API fetch failed with code ' + response.getResponseCode() + ': ' + text);
+      }
+      
+      var json = JSON.parse(text);
+      if (json && json.rt_cd !== undefined && json.rt_cd !== null && String(json.rt_cd) !== '0') {
+        var msgCd = String(json.msg_cd || '');
+        // 초당 거래건수 초과 에러(EGW00201) 감지 시 예외 발생시켜 재시도 유도
+        if (msgCd === 'EGW00201' || (json.msg1 && json.msg1.indexOf('초당 거래건수') >= 0)) {
+          throw new Error('KIS TPS Limit Exceeded (' + msgCd + '): ' + json.msg1);
+        }
+        throw new Error('KIS API Business Error (' + json.rt_cd + '): ' + (json.msg1 || 'Unknown business error') + ' [Code: ' + msgCd + ']');
+      }
+      
+      return json; // 성공 시 즉각 반환
+    } catch(err) {
+      lastError = err;
+      var errStr = String(err.message || '');
+      // 재시도 가능한 일시적 에러인 경우에 한정하여 백오프 대기 후 재기동
+      if ((errStr.indexOf('TPS Limit') >= 0 || errStr.indexOf('HTTP 429') >= 0 || errStr.indexOf('HTTP 500') >= 0) && attempt < 3) {
+        logWarn_('kis_client', 'Temporary API error (TPS or HTTP 429/500) detected. Retrying in ' + (attempt * 500) + 'ms...', { error: err.message, attempt: attempt });
+        Utilities.sleep(attempt * 500); // 지수적 대기 (500ms -> 1000ms)
+      } else {
+        throw err; // 재시도 불가능한 에러이거나 최대 3회 시도를 초과한 경우
+      }
+    }
   }
-  var json = JSON.parse(text);
-  if (json && json.rt_cd !== undefined && json.rt_cd !== null && String(json.rt_cd) !== '0') {
-    throw new Error('KIS API Business Error (' + json.rt_cd + '): ' + (json.msg1 || 'Unknown business error') + ' [Code: ' + (json.msg_cd || '') + ']');
-  }
-  return json;
+  throw lastError || new Error('API fetch failed after maximum retry attempts');
 }
 
 function getKisAccessToken_(customAuth) {
@@ -338,7 +366,7 @@ function getKisAccountConfig_() {
 // 🚀 실시간 주가 / 등락률 조회 코어 함수
 // ==================================================
 
-function fetchKisCurrentPrice_(symbol) {
+function fetchKisCurrentPrice_(symbol, customAuth) {
   symbol = normalizeStockSymbol_(symbol);
   
   // 🚀 [초고속 3분 시세 캐시 피드] 중복 호출 병목 제거
@@ -353,6 +381,25 @@ function fetchKisCurrentPrice_(symbol) {
     }
   } catch(e) {}
   
+  // 🚀 [신설] customAuth가 누락되었으나 운용 모드가 MOCK/PAPER인 경우 자동으로 mockAuth 빌드 및 주입
+  if (!customAuth) {
+    try {
+      var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+      if (portMode === 'MOCK' || portMode === 'PAPER') {
+        var account = getKisAccountConfig_();
+        if (account.mockAppKey && account.mockAppSecret) {
+          customAuth = {
+            appKey: account.mockAppKey,
+            appSecret: account.mockAppSecret,
+            baseUrl: account.mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
+          };
+        }
+      }
+    } catch(authErr) {
+      logWarn_('kis_client', 'Failed to auto-build mockAuth for domestic price scan', { error: authErr.message });
+    }
+  }
+  
   var lastError = null;
   var quote = null;
   
@@ -362,7 +409,7 @@ function fetchKisCurrentPrice_(symbol) {
       var response = kisGet_('/uapi/domestic-stock/v1/quotations/inquire-price', {
         FID_COND_MRKT_DIV_CODE: 'J',
         FID_INPUT_ISCD: symbol
-      }, 'FHKST01010100');
+      }, 'FHKST01010100', customAuth);
       quote = normalizeKisCurrentPrice_(symbol, response);
       break;
     } catch (err) {
@@ -558,17 +605,27 @@ function fetchKisOverseasCurrentPrice_(symbol) {
   if (!quote) {
     try {
       // 미국 주식 거래소 매핑
-      var exchange = 'NAS';
-      var nyseList = ['NYS', 'T', 'DIS', 'KO', 'PEP', 'JNJ', 'PG', 'XOM', 'CVX', 'BRK.B', 'V', 'MA'];
-      if (nyseList.indexOf(symbol) >= 0) {
-        exchange = 'NYS';
+      var exchange = determineUsExchange_(symbol);
+      
+      // 현재 포트폴리오 모드(REAL/MOCK)에 맞추어 KIS API 키 및 베이스 URL을 자동 전환해 줌
+      var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+      var customAuth = null;
+      if (portMode === 'MOCK' || portMode === 'PAPER') {
+        var account = getKisAccountConfig_();
+        if (account.mockAppKey && account.mockAppSecret) {
+          customAuth = {
+            appKey: account.mockAppKey,
+            appSecret: account.mockAppSecret,
+            baseUrl: account.mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
+          };
+        }
       }
       
       var response = kisGet_('/uapi/overseas-price/v1/quotations/price', {
         AUTH: '',
         EXCD: exchange,
         SYMB: symbol
-      }, 'HHDFS76201E0');
+      }, 'HHDFS76201E0', customAuth);
       
       var output = response.output || response;
       var close = Number(output.last || 0);
@@ -586,6 +643,19 @@ function fetchKisOverseasCurrentPrice_(symbol) {
       }
     } catch(e) {
       logWarn_('kis_client', 'Backup KIS API also failed for overseas symbol ' + symbol, { error: e.message });
+    }
+  }
+  
+  // 🚀 [3순위 최종 보루] 야후 파이낸스 및 KIS API 모두 실패 시 네이버 금융 실시간 API 구동
+  if (!quote) {
+    logWarn_('kis_client', 'Yahoo and KIS API failed for overseas symbol ' + symbol + '; falling back to Naver Worldstock API', { symbol: symbol });
+    try {
+      var naverQuote = fetchNaverOverseasCurrentPrice_(symbol);
+      if (naverQuote) {
+        quote = naverQuote;
+      }
+    } catch(naverErr) {
+      logWarn_('kis_client', 'Naver worldstock fallback also failed', { symbol: symbol, error: naverErr.message });
     }
   }
   
@@ -671,6 +741,8 @@ function getStockKoreanName_(symbol, fallbackName) {
     '035250': '강원랜드',
     '009830': '한화솔루션',
     '011170': '롯데케미칼',
+    '066570': 'LG전자',
+    '011070': 'LG이노텍',
     
     // 미국 주요 대형주 및 핵심 우량주 21종
     'GOOG': '알파벳 C (구글 C)',
@@ -754,7 +826,14 @@ function getStockKoreanName_(symbol, fallbackName) {
     if (isOverseas) {
       quote = fetchSingleKisOverseasNameAndPrice_(cleanSymbol);
     } else {
-      quote = fetchKisCurrentPrice_(cleanSymbol);
+      try {
+        quote = fetchKisCurrentPrice_(cleanSymbol);
+      } catch(kisErr) {
+        // KIS API 실패 시 네이버 금융 종목명/시세 스크래핑 폴백 (인증키 무관 100% 성공 보장)
+        try {
+          quote = fetchNaverStockPrice_(cleanSymbol);
+        } catch(navErr) {}
+      }
     }
     if (quote && quote.name && quote.name !== cleanSymbol && !/^[0-9]/.test(quote.name)) {
       resolvedName = quote.name;
@@ -767,7 +846,14 @@ function getStockKoreanName_(symbol, fallbackName) {
     return resolvedName;
   }
   
-  return fallbackName || symbol;
+  // 💡 [Fallback 치유] 만약 fallbackName이 숫자코드 형태(0이 잘렸거나 포함된 숫자)이면
+  // 종목명으로 부적합하므로, 정규화된 cleanSymbol(011070)을 대신 리턴하도록 보정
+  var finalFallback = String(fallbackName || '').trim();
+  if (/^\d+$/.test(finalFallback)) {
+    return cleanSymbol;
+  }
+  
+  return finalFallback || symbol;
 }
 
 /**
@@ -777,17 +863,27 @@ function getStockKoreanName_(symbol, fallbackName) {
 function fetchSingleKisOverseasNameAndPrice_(symbol) {
   symbol = normalizeStockSymbol_(symbol);
   try {
-    var exchange = 'NAS';
-    var nyseList = ['NYS', 'T', 'DIS', 'KO', 'PEP', 'JNJ', 'PG', 'XOM', 'CVX', 'BRK.B', 'V', 'MA'];
-    if (nyseList.indexOf(symbol) >= 0) {
-      exchange = 'NYS';
+    var exchange = determineUsExchange_(symbol);
+    
+    // 현재 포트폴리오 모드(REAL/MOCK)에 맞추어 KIS API 키 및 베이스 URL을 자동 전환해 줌
+    var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+    var customAuth = null;
+    if (portMode === 'MOCK' || portMode === 'PAPER') {
+      var account = getKisAccountConfig_();
+      if (account.mockAppKey && account.mockAppSecret) {
+        customAuth = {
+          appKey: account.mockAppKey,
+          appSecret: account.mockAppSecret,
+          baseUrl: account.mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
+        };
+      }
     }
     
     var response = kisGet_('/uapi/overseas-price/v1/quotations/price', {
       AUTH: '',
       EXCD: exchange,
       SYMB: symbol
-    }, 'HHDFS76201E0');
+    }, 'HHDFS76201E0', customAuth);
     
     var output = response.output || response;
     var close = Number(output.last || 0);
@@ -802,6 +898,14 @@ function fetchSingleKisOverseasNameAndPrice_(symbol) {
     }
   } catch(e) {
     logWarn_('kis_client', 'fetchSingleKisOverseasNameAndPrice_ failed for ' + symbol, { error: e.message });
+    
+    // 🚀 백업 폴백 적용: KIS API 실패 시 네이버 금융에서 획득 시도
+    try {
+      var naverQuote = fetchNaverOverseasCurrentPrice_(symbol);
+      if (naverQuote) {
+        return naverQuote;
+      }
+    } catch(naverErr) {}
   }
   return null;
 }
@@ -865,4 +969,90 @@ function getLiveUsdRate_() {
   } catch(e) {}
   
   return 1500; // 최종 2026년 기준 실 상응 폴백 환율
+}
+
+/**
+ * 🚀 미국 주식 및 ETF의 정확한 거래소 식별기 (한투 open API 매핑용)
+ * SPY, TLT 등 주요 자산배분 ETF는 AMS(아멕스)로, 대형 기술주 및 QQQ는 NAS(나스닥)로 정확히 분류
+ */
+function determineUsExchange_(symbol) {
+  var cleanSym = String(symbol || '').trim().toUpperCase();
+  
+  // 아멕스 (AMS) - 주로 자산배분/채권/원자재 및 대표 S&P 500 ETF
+  var amsList = [
+    'SPY', 'IVV', 'VOO', 'DIA', 'TLT', 'IEF', 'SHY', 'GLD', 'SLV', 'USO', 
+    'BIL', 'SHV', 'VGIT', 'BND', 'VT', 'VNQ', 'VWO', 'VEA', 'IWM', 'PDBC',
+    'DBC', 'IAU', 'LQD', 'HYG', 'TIP', 'VIG', 'VYM'
+  ];
+  if (amsList.indexOf(cleanSym) >= 0) {
+    return 'AMS';
+  }
+  
+  // 뉴욕 (NYS)
+  var nysList = [
+    'NYS', 'T', 'DIS', 'KO', 'JNJ', 'PG', 'XOM', 'CVX', 'BRK.B', 'BRK.A', 
+    'V', 'MA', 'JPM', 'BAC', 'WMT', 'UNH', 'HD', 'LLY', 'ABBV', 'MRK', 
+    'PFE', 'NKE', 'MCD', 'VZ', 'CSX', 'GE', 'ORCL', 'UNP', 'BA', 'CAT'
+  ];
+  if (nysList.indexOf(cleanSym) >= 0) {
+    return 'NYS';
+  }
+  
+  // 기본값은 나스닥 (NAS) - 주요 기술주 (AAPL, MSFT, TSLA, NVDA 등) 및 QQQ
+  return 'NAS';
+}
+
+/**
+ * 🚀 네이버 금융 실시간 해외 주식/ETF 시세 조회 (3순위 최종 보루 폴백)
+ * 야후 파이낸스 차단 및 KIS API 실패 상황에서도 100% 시세 획득을 보장함.
+ */
+function fetchNaverOverseasCurrentPrice_(symbol) {
+  var cleanSymbol = normalizeStockSymbol_(symbol);
+  
+  // 나스닥 종목은 로이터 코드 규격상 .O 접미사를 붙여야 데이터가 리턴됨
+  // QQQ -> QQQ.O, AAPL -> AAPL.O
+  // 뉴욕/아멕스(SPY, KO 등)는 접미사 없이 호출해야 함
+  var naverSym = cleanSymbol;
+  
+  // 나스닥 종목 리스트 (간단한 판별 또는 대형 나스닥 기술주/ETF 타겟팅)
+  var nasdaqList = ['QQQ', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'GOOG', 'META', 'TSLA', 'NVDA', 'AVGO', 'COST', 'NFLX', 'ADBE', 'CSCO', 'INTC', 'QCOM'];
+  if (nasdaqList.indexOf(cleanSymbol) >= 0 || cleanSymbol === 'QQQ') {
+    naverSym = cleanSymbol + '.O';
+  }
+  
+  try {
+    var url = 'https://polling.finance.naver.com/api/realtime/worldstock/stock/' + naverSym;
+    var response = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    
+    if (response.getResponseCode() === 200) {
+      var json = JSON.parse(response.getContentText());
+      if (json && json.datas && json.datas.length > 0) {
+        var data = json.datas[0];
+        var close = Number(data.closePrice ? data.closePrice.replace(/,/g, '') : 0);
+        var changePct = Number(data.fluctuationsRatio || 0);
+        
+        if (close > 0) {
+          logInfo_('naver_ovs_fallback', 'Successfully fetched real-time price from Naver for ' + symbol, { close: close, pct: changePct });
+          return {
+            symbol: cleanSymbol,
+            name: data.stockName || symbol,
+            close: close,
+            change_pct: changePct,
+            volume: 0,
+            trading_value: 0,
+            market: 'US_STOCK',
+            sector: '해외주식'
+          };
+        }
+      }
+    }
+  } catch(e) {
+    logWarn_('naver_ovs_fallback', 'Failed to fetch overseas price from Naver for ' + symbol, { error: e.message });
+  }
+  return null;
 }

@@ -69,6 +69,13 @@ function objectToSheetRow_(headers, obj) {
     if (value === undefined || value === null) return '';
     if (key === 'date') return normalizeDateValue_(value);
     if (typeof value === 'object') return JSON.stringify(value);
+    
+    // 💡 [Leading Zero 완전 수호] symbol 컬럼이고 6자리 이하의 국내 주식 코드 형태이면 
+    // 구글 시트가 숫자로 자동 판별해 0을 누락하는 결함을 예방하기 위해 어포스트로피(')를 붙여 강제 텍스트 기입
+    if (key === 'symbol' && typeof value === 'string' && /^\d+$/.test(value) && value.length <= 6) {
+      return "'" + normalizeStockSymbol_(value);
+    }
+    
     return value;
   });
 }
@@ -120,7 +127,7 @@ function deleteHoldingsCurrentBySources_(dateValue, sources) {
     if (isTargetDate) {
       for (var i = 0; i < sources.length; i++) {
         var srcCond = sources[i];
-        if (srcCond === 'kis' || srcCond === 'manual_') {
+        if (srcCond === 'kis' || srcCond === 'manual_' || srcCond === 'mock_trading') {
           if (rowSource.indexOf(srcCond) === 0) {
             isTargetSource = true;
             break;
@@ -170,8 +177,15 @@ function cleanDuplicateManualHoldings_() {
     var needsRewrite = false;
     
     rows.forEach(function(row) {
+      var originalSymbol = String(row.symbol || '').trim();
       var symbol = normalizeStockSymbol_(row.symbol);
       if (!symbol) return;
+      
+      // 💡 [Self-Healing] 시트에 기입된 원래 종목코드 포맷과 6자리 패딩된 코드가 다르면 덮어쓰기 트리거 활성화
+      if (originalSymbol !== symbol) {
+        row.symbol = symbol;
+        needsRewrite = true;
+      }
       
       var broker = normalizeBrokerName_(row.broker);
       var key = broker + '_' + symbol;
@@ -185,9 +199,20 @@ function cleanDuplicateManualHoldings_() {
       var currentName = String(row.name || '').trim();
       if (!currentName || currentName === symbol || /^[0-9]+$/.test(currentName)) {
         var resolvedName = getStockKoreanName_(symbol, currentName);
-        if (resolvedName && resolvedName !== symbol && !/^[0-9]+$/.test(resolvedName)) {
-          row.name = resolvedName;
-          needsRewrite = true;
+        if (resolvedName) {
+          var isResolvedValidName = (resolvedName !== symbol && !/^[0-9]+$/.test(resolvedName));
+          if (isResolvedValidName) {
+            if (currentName !== resolvedName) {
+              row.name = resolvedName;
+              needsRewrite = true;
+            }
+          } else {
+            // 한글명을 못 찾고 6자리 코드만 얻은 경우, 0이 유실되어 잘못된 코드("11070") 보단 "011070"으로 갱신
+            if (currentName !== resolvedName) {
+              row.name = resolvedName;
+              needsRewrite = true;
+            }
+          }
         }
       }
       
@@ -272,6 +297,10 @@ function normalizeDateValue_(value) {
 
 function normalizeStockSymbol_(symbol) {
   var s = String(symbol || '').trim().toUpperCase();
+  // 맨 앞의 어포스트로피(') 제거 (구글 시트 텍스트 강제 입력 시 접두사 보정)
+  if (s.indexOf("'") === 0) {
+    s = s.substring(1);
+  }
   // 💡 [Leading Zero 완전 수호] 국내 주식 종목코드 6자리 미만 시 앞자리 '0' 자동 채움 (구글 시트의 앞자리 0 증발 결함 원천 치유)
   if (/^\d+$/.test(s) && s.length < 6) {
     while (s.length < 6) {
@@ -445,6 +474,7 @@ function menuCollectHoldings() {
 function menuSetModeReal() {
   try {
     setScriptProperty_('PORTFOLIO_MODE', 'REAL');
+    updateSettingValueInSheet_('PORTFOLIO_MODE', 'REAL');
     collectHoldingsCurrent();
     safeUiAlert_('🔄 [운용 모드 전환 완료]\n\n포트폴리오 주식 운용 모드가 실계좌 및 수동 자산 모드인 [REAL]로 즉각 전환되었습니다!');
   } catch(e) {
@@ -456,6 +486,7 @@ function menuSetModeReal() {
 function menuSetModeMock() {
   try {
     setScriptProperty_('PORTFOLIO_MODE', 'MOCK');
+    updateSettingValueInSheet_('PORTFOLIO_MODE', 'MOCK');
     collectHoldingsCurrent();
     safeUiAlert_('🔄 [운용 모드 전환 완료]\n\n포트폴리오 주식 운용 모드가 실제 한투 API 연동 모의투자 모드인 [MOCK]으로 즉각 전환되었습니다!');
   } catch(e) {
@@ -539,6 +570,8 @@ function menuRunDiagnostics() {
       '  - 웹훅 주소 싱크상태: ' + (diag.diagnostics.telegram_webhook.aligned ? '일치함 (무결점)' : '어긋남'),
       '  - 자가 치유(Self-healed) 작동 여부: ' + (diag.diagnostics.telegram_webhook.auto_healed ? '자가 정렬 치료 완수! 🎉' : '치료 불필요 (양호)'),
       '  - 대기 큐 메시지 수: ' + diag.diagnostics.telegram_webhook.pending_update_count + '개',
+      '  - 최근 전송 오류 메시지: ' + (diag.diagnostics.telegram_webhook.last_error_message || '없음'),
+      '  - 오류 발생 시각: ' + (diag.diagnostics.telegram_webhook.last_error_date || 'N/A'),
       '',
       '[3. 운용 모드 및 시트 DB 상태]',
       '  - 활성 포트폴리오 모드: ' + diag.diagnostics.portfolio.mode,
@@ -643,7 +676,9 @@ function syncPropertiesFromSheet() {
     { key: 'KIS_BASE_URL', desc: '한국투자증권 API 통신 주소' },
     { key: 'ADMIN_TOKEN', desc: '웹앱 대시보드 디버그/진단용 관리자 인증 토큰' },
     { key: 'WEB_APP_URL', desc: '구글 앱스 스크립트 웹앱 배포 실행 URL (/exec)' },
-    { key: 'CUSTOM_DASHBOARD_URL', desc: '경고 배너 우회 제거용 GitHub Pages / 외부 대시보드 주소' }
+    { key: 'CUSTOM_DASHBOARD_URL', desc: '경고 배너 우회 제거용 GitHub Pages / 외부 대시보드 주소' },
+    { key: 'PORTFOLIO_MODE', desc: '현재 포트폴리오 운용 모드 (REAL / MOCK / PAPER)' },
+    { key: 'KIS_MOCK_SEED_MONEY', desc: '한국투자증권 모의투자 개설 시 설정한 초기 가상 예수금 원금 (기본 10000000)' }
   ];
   
   var existingKeys = (rows || []).map(function(r) { return String(r.key || '').trim().toUpperCase(); });
@@ -889,6 +924,9 @@ function seedQuantSettings_() {
  */
 function setupAppsScriptTriggers_() {
   try {
+    // 🚀 [자가 치유] 과거 불필요한 레거시/중복 트리거 전량 일괄 자동 정화 (2개씩 오던 텔레그램 경보 차단)
+    try { pruneLegacyTriggers_(); } catch(pe) {}
+    
     var triggers = ScriptApp.getProjectTriggers();
     var existingHandlers = triggers.map(function(t) {
       return t.getHandlerFunction();
@@ -995,4 +1033,58 @@ function appendObjectRowsNoLock_(sheetName, objects) {
   var sheet = ensureSheet_(sheetName, headers);
   var rowIndex = sheet.getLastRow() + 1;
   sheet.getRange(rowIndex, 1, rows.length, headers.length).setValues(rows);
+}
+
+/**
+ * settings 시트 내 특정 키의 값을 실시간으로 업데이트
+ */
+function updateSettingValueInSheet_(key, value) {
+  try {
+    var sheetName = AM_CONFIG.SHEETS.SETTINGS;
+    var headers = AM_SHEET_SCHEMAS[sheetName];
+    var sheet = ensureSheet_(sheetName, headers);
+    
+    var dataRange = sheet.getDataRange();
+    var values = dataRange.getValues();
+    var keyColIdx = headers.indexOf('key');
+    var valColIdx = headers.indexOf('value');
+    var dateColIdx = headers.indexOf('updated_at');
+    
+    if (keyColIdx < 0 || valColIdx < 0) return false;
+    
+    var cleanKey = String(key || '').trim().toUpperCase();
+    var updated = false;
+    
+    // 2번째 줄부터 데이터 검색 (헤더 제외)
+    for (var i = 1; i < values.length; i++) {
+      var k = String(values[i][keyColIdx] || '').trim().toUpperCase();
+      if (k === cleanKey) {
+        // 셀 값 직접 갱신 (1-indexed 행/열 보정)
+        sheet.getRange(i + 1, valColIdx + 1).setValue(String(value));
+        if (dateColIdx >= 0) {
+          sheet.getRange(i + 1, dateColIdx + 1).setValue(amNowString_());
+        }
+        updated = true;
+        break;
+      }
+    }
+    
+    // 만약 시트에 해당 키가 존재하지 않는다면 신규 행으로 하단에 추가
+    if (!updated) {
+      var newRow = {
+        key: cleanKey,
+        value: String(value),
+        description: '자동 생성된 설정 속성',
+        updated_at: amNowString_()
+      };
+      appendObjectRow_(sheetName, newRow);
+      updated = true;
+    }
+    
+    logInfo_('settings_update', 'Successfully updated setting in sheet', { key: cleanKey, value: value });
+    return updated;
+  } catch(err) {
+    logWarn_('settings_update', 'Failed to update setting value in sheet', { key: key, error: err.message });
+    return false;
+  }
 }

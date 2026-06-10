@@ -12,6 +12,8 @@
   
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
     /* Premium CSS Variables & Reset */
@@ -1385,6 +1387,20 @@
         </div>
       </div>
       
+      <!-- 📊 섹터별 비중 현황 차트 카드 -->
+      <div class="summary-card" style="padding: 20px; margin-bottom: 16px; background: linear-gradient(135deg, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.6) 100%);">
+        <div class="summary-label" style="font-size: 0.75rem; margin-bottom: 12px; color: var(--text-primary); font-weight: 600; display: flex; justify-content: space-between;">
+          <span>섹터별 투자 비중 분석</span>
+          <span style="color: var(--accent-purple);">도넛 차트</span>
+        </div>
+        <div style="position: relative; width: 100%; max-height: 220px; display: flex; justify-content: center; align-items: center; padding: 10px 0;">
+          <canvas id="sectorChart" style="max-width: 200px; max-height: 200px;"></canvas>
+        </div>
+        <div id="sectorLegend" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 14px; font-size: 0.75rem; color: var(--text-secondary);">
+          <div class="empty-state" style="padding: 10px; grid-column: span 2;">등록된 자산이 없습니다.</div>
+        </div>
+      </div>
+      
       <!-- 🤖 월스트리트 수석 매니저 Gemini AI 어드바이저 위젯 -->
       <div class="section-title" style="margin-top: 24px;">
         <i class="fa-solid fa-robot" style="color: var(--positive-red);"></i> Gemini AI 퀀트 리밸런싱 어드바이저
@@ -1698,7 +1714,7 @@
     // Vercel, Github Pages 등 외부 도메인 배포 시 google.script.run 호출을 동적으로 비동기 REST API 통신으로 완벽 전환합니다.
     // 기존의 index.html 소스코드는 단 한 줄도 훼손하지 않으므로 언제든지 Apps Script 내부 렌더링 방식으로 100% 폴백이 가능합니다.
     if (typeof google === 'undefined' || !google.script || !google.script.run) {
-      const API_URL = "https://script.google.com/macros/s/AKfycbzAtj9DUWqvJC4HWhbgdyurw3TKKaFHWN3XwluBxYatl8ixo7Tk3Qm8oH5_snrtquPxKg/exec";
+      const API_URL = "https://script.google.com/macros/s/AKfycbzNBBpzQDGet6ccuIE8EF72D1R61MS4qkdKxnw2lvoBs3radRiBnsiFy5I1zUWCl5hGCg/exec";
       
       window.google = {
         script: {
@@ -1746,7 +1762,7 @@
             // index.html에서 호출하는 Apps Script 백엔드 함수 매핑 목록
             getPortfolioDataForWeb: function(force) { this._callApi('getPortfolioDataForWeb', [force]); },
             getPaperLedgerDataForWeb: function() { this._callApi('getPaperLedgerDataForWeb', []); },
-            toggleInvestmentModeFromWeb: function() { this._callApi('toggleInvestmentModeFromWeb', []); },
+            toggleInvestmentModeFromWeb: function(mode) { this._callApi('toggleInvestmentModeFromWeb', [mode]); },
             updateHoldingFromWeb: function(broker, symbol, qty, price, active) { this._callApi('updateHoldingFromWeb', [broker, symbol, qty, price, active]); },
             getStockNewsForWeb: function(force) { this._callApi('getStockNewsForWeb', [force]); },
             getAiPortfolioAdviceForWeb: function(force) { this._callApi('getAiPortfolioAdviceForWeb', [force]); },
@@ -2076,7 +2092,7 @@
             
             <!-- 3행: [3*1부터 3*4까지] 배지 (가운데 정렬 반영) -->
             <div style="grid-column: 1 / 5; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; justify-content: center; padding: 2px 0; border-top: 1px solid rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.03);">
-              <span style="padding: 1px 4px; border-radius: 3px; background: rgba(52, 211, 153, 0.08); border: 1px solid rgba(52, 211, 153, 0.18); color: #34d399; font-size: 0.58rem; cursor: pointer; white-space: nowrap;" onclick="showIndicatorExplanation('ROE')" title="ROE ${s.roe}%">ROE ${s.roe}%</span>
+              <span style="padding: 1px 4px; border-radius: 3px; background: rgba(52, 211, 153, 0.08); border: 1px solid rgba(52, 211, 153, 0.18); color: #34d399; font-size: 0.58rem; cursor: pointer; white-space: nowrap;" onclick="showIndicatorExplanation('ROE')" title="ROE ${s.roe > 0 ? s.roe + '%' : 'N/A'}">ROE ${s.roe > 0 ? s.roe + '%' : 'N/A'}</span>
               <span style="padding: 1px 4px; border-radius: 3px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.18); color: #fbbf24; font-size: 0.58rem; cursor: pointer; white-space: nowrap;" onclick="showIndicatorExplanation('DEBT')" title="부채 ${s.debt}%">부채 ${s.debt}%</span>
               <span style="padding: 1px 4px; border-radius: 3px; background: rgba(192, 132, 252, 0.08); border: 1px solid rgba(192, 132, 252, 0.18); color: #c084fc; font-size: 0.58rem; cursor: pointer; white-space: nowrap;" onclick="showIndicatorExplanation('DIV_YIELD')" title="배당 ${divYieldText}">배당 ${divYieldText}</span>
               <span style="padding: 1px 4px; border-radius: 3px; background: rgba(34, 211, 238, 0.08); border: 1px solid rgba(34, 211, 238, 0.18); color: ${betaSignColor}; font-size: 0.58rem; cursor: pointer; white-space: nowrap;" onclick="showIndicatorExplanation('BETA')" title="β ${s.beta}">β ${s.beta}</span>
@@ -2473,7 +2489,10 @@
               <div class="asset-info">
                 <div class="asset-icon ${iconType}">${iconSymbol}</div>
                 <div class="asset-meta">
-                  <span class="asset-name">${escapeHtml(asset.name)}</span>
+                  <span class="asset-name">
+                    ${escapeHtml(asset.name)}
+                    <span style="font-size: 0.62rem; color: #a78bfa; background: rgba(124, 58, 237, 0.08); border: 1px solid rgba(124, 58, 237, 0.18); padding: 1px 4px; border-radius: 4px; font-weight: 700; margin-left: 4px; vertical-align: middle;">비중 ${Number(asset.portfolio_weight_pct || 0).toFixed(1)}%</span>
+                  </span>
                   <span class="asset-symbol-label">
                     ${escapeHtml(asset.symbol)} <span class="asset-broker">${escapeHtml(asset.broker)}</span>
                   </span>
@@ -2530,7 +2549,10 @@
               <div class="asset-info">
                 <div class="asset-icon ${iconType}">${iconSymbol}</div>
                 <div class="asset-meta">
-                  <span class="asset-name">${escapeHtml(asset.name)}</span>
+                  <span class="asset-name">
+                    ${escapeHtml(asset.name)}
+                    <span style="font-size: 0.62rem; color: #a78bfa; background: rgba(124, 58, 237, 0.08); border: 1px solid rgba(124, 58, 237, 0.18); padding: 1px 4px; border-radius: 4px; font-weight: 700; margin-left: 4px; vertical-align: middle;">비중 ${Number(asset.portfolio_weight_pct || 0).toFixed(1)}%</span>
+                  </span>
                   <span class="asset-symbol-label">
                     ${escapeHtml(asset.symbol)} <span class="asset-broker">${escapeHtml(asset.broker)}</span>
                   </span>
@@ -2604,15 +2626,23 @@
     // Mode Toggle Logic
     function handleModeToggle(checkbox) {
       const mode = checkbox.checked ? "REAL" : "MOCK";
+      const previousCheckedState = !checkbox.checked; // 🚀 에러 발생 시 롤백을 위한 이전 상태 저장
       showHUD('loading', '투자 모드 변경 중', `${mode === 'REAL' ? '실제 계좌' : '모의 투자'} 모드로 전환하고 있습니다...`);
       
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(() => {
             showHUD('success', '변경 완료', '운용 투자 모드가 성공적으로 변경되었습니다!');
-            setTimeout(fetchPortfolioData, 1200);
+            // 🚀 [강제 실시간 동기화 호출] 백엔드 모드가 변경되었으므로, forceRefresh = true 로 데이터를 즉시 갱신
+            setTimeout(() => {
+              fetchPortfolioData(true);
+            }, 1200);
           })
-          .withFailureHandler(onDataLoadFailed)
+          .withFailureHandler((err) => {
+            // 🚀 [롤백 메커니즘 기동] API 실패 시 UI 스위치 상태 원복
+            checkbox.checked = previousCheckedState;
+            onDataLoadFailed(err);
+          })
           .toggleInvestmentModeFromWeb(mode);
       } else {
         // Local preview fallback
@@ -3308,17 +3338,30 @@
       if (!barContainer) return;
 
       if (!localPortfolioData || !localPortfolioData.assets || localPortfolioData.assets.length === 0) {
-        barContainer.innerHTML = '<div class="empty-state" style="padding: 15px;">등록된 실재 보유 자산이 없습니다.</div>';
+        barContainer.innerHTML = '<div class="empty-state" style="padding: 15px;">등록된 보유 자산이 없습니다.</div>';
         if (totalStockValEl) totalStockValEl.innerText = "총자산: ₩0";
         return;
       }
 
-      // 현금을 제외한 주식 자산만 필터링하여 비중 순 정렬
-      const stockAssets = localPortfolioData.assets.filter(a => a.symbol !== "CASH");
-      if (stockAssets.length === 0) {
-        barContainer.innerHTML = '<div class="empty-state" style="padding: 15px;">보유한 주식 자산이 없습니다.</div>';
-        if (totalStockValEl) totalStockValEl.innerText = "총자산: ₩0";
-        return;
+      // 🚀 [패치] 전체 비중 현금(예수금) 가상 자산 편입 처리
+      let allAssets = [...localPortfolioData.assets];
+      const totalCashVal = Number(localPortfolioData.totalCash || 0);
+      if (totalCashVal > 0 && !allAssets.some(a => a.symbol === 'CASH')) {
+        allAssets.push({
+          broker: '현금',
+          symbol: 'CASH',
+          name: '예수금/현금자산',
+          qty: 1,
+          price: totalCashVal,
+          currentPrice: totalCashVal,
+          priceKrw: totalCashVal,
+          currentPriceKrw: totalCashVal,
+          isCoin: false,
+          isUsd: false,
+          changePct: 0,
+          profitLossPct: 0,
+          portfolio_weight_pct: localPortfolioData.totalAsset > 0 ? (totalCashVal / localPortfolioData.totalAsset * 100) : 0
+        });
       }
 
       // 은행별로 정격 네온 포인트 색상을 추출하는 헬퍼 함수
@@ -3333,7 +3376,9 @@
           'upbit': '#eab308',     // 업비트 - 네온 골드
           '모의투자': '#14b8a6',  // 모의투자 - 네온 틸
           'toss': '#a855f7',      // 토스 - 네온 퍼플
-          'kb': '#eab308'         // KB - 네온 옐로우
+          'kb': '#eab308',         // KB - 네온 옐로우
+          'cash': '#64748b',       // 예수금/현금자산 - 쿨 그레이
+          '현금': '#64748b'
         };
         
         // 브로커명에 특정 단어가 포함된 경우 색상 매핑 보조 세이프가드
@@ -3349,19 +3394,22 @@
         return `hsl(${Math.abs(hash % 360)}, 85%, 60%)`;
       }
 
-      // 1. 주식 자산 종목코드(symbol)별 그룹화 (Group By Stock Symbol)
+      // 1. 자산 종목코드(symbol)별 그룹화 (Group By Asset Symbol)
       const groupedMap = {};
-      let totalStockEval = 0;
+      let totalPortfolioEval = 0;
+      const usdRate = localPortfolioData.usdRate || 1350;
 
-      stockAssets.forEach(asset => {
+      allAssets.forEach(asset => {
         const sym = asset.symbol;
-        const evalAmt = Math.round(Number(asset.qty || 0) * Number(asset.currentPriceKrw || 0));
-        totalStockEval += evalAmt;
+        const qty = Number(asset.qty || 0);
+        const curPriceKrw = Number(asset.currentPriceKrw || 1);
+        const evalAmt = Math.round(qty * curPriceKrw);
+        totalPortfolioEval += evalAmt;
 
         if (!groupedMap[sym]) {
           groupedMap[sym] = {
             symbol: sym,
-            name: asset.name || sym,
+            name: asset.name || (sym === 'CASH' ? '예수금' : sym),
             totalEval: 0,
             totalQty: 0,
             brokers: []
@@ -3369,29 +3417,37 @@
         }
 
         groupedMap[sym].totalEval += evalAmt;
-        groupedMap[sym].totalQty += Number(asset.qty || 0);
+        groupedMap[sym].totalQty += qty;
         groupedMap[sym].brokers.push({
-          broker: asset.broker,
-          qty: Number(asset.qty || 0),
+          broker: asset.broker || '예수금',
+          qty: qty,
           evalAmt: evalAmt,
           priceKrw: asset.priceKrw || 0,
-          currentPriceKrw: asset.currentPriceKrw || 0
+          currentPriceKrw: curPriceKrw
         });
       });
 
+      // 표시 통화(원화/달러)에 따른 총자산 텍스트 포맷팅
+      const dispSym = (currentCurrency === 'USD') ? '$' : '₩';
+      const dispVal = (currentCurrency === 'USD') ? (totalPortfolioEval / usdRate) : totalPortfolioEval;
+      const formattedTotal = Number(dispVal).toLocaleString(currentCurrency === 'USD' ? 'en-US' : 'ko-KR', {
+        minimumFractionDigits: (currentCurrency === 'USD' ? 2 : 0),
+        maximumFractionDigits: (currentCurrency === 'USD' ? 2 : 0)
+      });
+
       if (totalStockValEl) {
-        totalStockValEl.innerText = `총 주식자산: ₩${totalStockEval.toLocaleString('ko-KR')}`;
+        totalStockValEl.innerText = `총 평가자산: ${dispSym}${formattedTotal}`;
       }
 
       // 2. 그룹별 비중 산출 및 내림차순 정렬
       const groups = Object.values(groupedMap);
       groups.forEach(g => {
-        g.weightPct = totalStockEval > 0 ? (g.totalEval / totalStockEval * 100) : 0;
+        g.weightPct = totalPortfolioEval > 0 ? (g.totalEval / totalPortfolioEval * 100) : 0;
         // 그룹 내에서 각 은행별 평가금액이 큰 순서대로 다시 내림차순 정렬
         g.brokers.sort((a, b) => b.evalAmt - a.evalAmt);
       });
 
-      // 전체 주식 비중이 높은 종목이 위로 오도록 정렬
+      // 전체 비중이 높은 종목이 위로 오도록 정렬
       groups.sort((a, b) => b.weightPct - a.weightPct);
 
       barContainer.innerHTML = "";
@@ -3423,12 +3479,11 @@
         `;
 
         // 🎛️ 네온 멀티 세그먼트 프로그레스 바 구축
-        // 액티브 바 내부에 각 은행별 비율(%)만큼 세그먼트를 쪼개어 flex 레이아웃으로 안착시킵니다.
         let segmentsHtml = "";
         group.brokers.forEach(b => {
           const shareInGroup = group.totalEval > 0 ? (b.evalAmt / group.totalEval * 100) : 0;
           if (shareInGroup > 0) {
-            const bColor = getBrokerColor(b.broker);
+            const bColor = group.symbol === 'CASH' ? getBrokerColor('cash') : getBrokerColor(b.broker);
             segmentsHtml += `
               <div style="width: ${shareInGroup}%; height: 100%; background: ${bColor}; box-shadow: 0 0 6px ${bColor}; transition: width 0.8s ease-in-out;" title="${b.broker} (${shareInGroup.toFixed(1)}%)"></div>
             `;
@@ -3447,8 +3502,16 @@
         let brokersListHtml = `<div style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px; border-top: 1px dashed rgba(255,255,255,0.04); padding-top: 8px;">`;
         group.brokers.forEach(b => {
           const shareInGroup = group.totalEval > 0 ? (b.evalAmt / group.totalEval * 100) : 0;
-          const bColor = getBrokerColor(b.broker);
+          const bColor = group.symbol === 'CASH' ? getBrokerColor('cash') : getBrokerColor(b.broker);
           
+          const dispAmt = (currentCurrency === 'USD') ? (b.evalAmt / usdRate) : b.evalAmt;
+          const formattedAmt = Number(dispAmt).toLocaleString(currentCurrency === 'USD' ? 'en-US' : 'ko-KR', {
+            minimumFractionDigits: (currentCurrency === 'USD' ? 2 : 0),
+            maximumFractionDigits: (currentCurrency === 'USD' ? 2 : 0)
+          });
+
+          const qtyText = group.symbol === 'CASH' ? '예수금' : `${b.qty.toLocaleString()}주`;
+
           brokersListHtml += `
             <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: var(--text-secondary);">
               <div style="display: flex; align-items: center; gap: 6px;">
@@ -3457,7 +3520,7 @@
                 <span style="font-size: 0.65rem;">(${shareInGroup.toFixed(1)}% 점유)</span>
               </div>
               <div style="text-align: right; font-weight: 500;">
-                ₩${b.evalAmt.toLocaleString('ko-KR')} <span style="font-size: 0.65rem; color: var(--text-secondary);">(${b.qty}주)</span>
+                ${dispSym}${formattedAmt} <span style="font-size: 0.65rem; color: var(--text-secondary);">(${qtyText})</span>
               </div>
             </div>
           `;
@@ -3468,6 +3531,160 @@
         card.innerHTML = headerHtml + progressHtml + brokersListHtml;
         barContainer.appendChild(card);
       });
+
+      // 4. 🗂️ [섹터별 투자 비중 분석 도넛 차트 및 범례 렌더링]
+      renderSectorDistribution(allAssets, totalPortfolioEval, usdRate, dispSym);
+    }
+
+    // 각 종목의 섹터를 판단하는 정적 매핑 및 룰 기반 분류 헬퍼 함수
+    function getSectorForStock(symbol, name) {
+      const sym = String(symbol || '').trim().toUpperCase();
+      const nm = String(name || '').trim();
+      
+      if (sym === 'CASH' || nm.indexOf('예수금') >= 0 || nm.indexOf('현금') >= 0) return '현금/안전자산';
+      
+      const techSymbols = ['005930', '000660', 'NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'AVGO', 'QCOM', 'ASML', 'AMD', 'TSMC'];
+      if (techSymbols.indexOf(sym) >= 0) return 'IT/반도체/빅테크';
+      
+      const financeSymbols = ['055550', '105560', '086790', '138040', '316140', '032830', '000810', 'BRK.B', 'JPM', 'V', 'MA'];
+      if (financeSymbols.indexOf(sym) >= 0) return '금융/보험';
+      
+      const batterySymbols = ['373220', '005490', '051910', '006400', '086520', '247540'];
+      if (batterySymbols.indexOf(sym) >= 0) return '배터리/소재/화학';
+      
+      const bioSymbols = ['207940', '068270', '000100', 'LLY', 'NVO', 'UNH', 'JNJ', 'MRK', 'ABBV'];
+      if (bioSymbols.indexOf(sym) >= 0) return '제약/바이오';
+      
+      const autoSymbols = ['005380', '000270', '011070', '066570', 'HD현대중공업', 'TSLA'];
+      if (autoSymbols.indexOf(sym) >= 0) return '자동차/중공업/우주';
+      
+      const etfSymbols = ['SPY', 'QQQ', 'IWM', 'EEM', 'VOO', 'IVV', 'DIA', 'TLT', 'BIL', 'IEF', 'SHY', 'LQD'];
+      if (etfSymbols.indexOf(sym) >= 0) return '지수추종/채권/ETF';
+      
+      if (nm.indexOf('반도체') >= 0 || nm.indexOf('전자') >= 0 || nm.indexOf('하이닉스') >= 0 || nm.indexOf('소프트웨어') >= 0 || nm.indexOf('AI') >= 0 || nm.indexOf('테크') >= 0) {
+        return 'IT/반도체/빅테크';
+      }
+      if (nm.indexOf('바이오') >= 0 || nm.indexOf('헬스') >= 0 || nm.indexOf('제약') >= 0 || nm.indexOf('메디') >= 0) {
+        return '제약/바이오';
+      }
+      if (nm.indexOf('화학') >= 0 || nm.indexOf('소재') >= 0 || nm.indexOf('배터리') >= 0 || nm.indexOf('SDI') >= 0 || nm.indexOf('에코프로') >= 0) {
+        return '배터리/소재/화학';
+      }
+      if (nm.indexOf('차') >= 0 || nm.indexOf('모터') >= 0 || nm.indexOf('중공업') >= 0 || nm.indexOf('엔진') >= 0 || nm.indexOf('우주') >= 0 || nm.indexOf('항공') >= 0 || nm.indexOf('조선') >= 0 || nm.indexOf('기계') >= 0) {
+        return '자동차/중공업/우주';
+      }
+      if (nm.indexOf('금융') >= 0 || nm.indexOf('지주') >= 0 || nm.indexOf('증권') >= 0 || nm.indexOf('생명') >= 0 || nm.indexOf('화재') >= 0 || nm.indexOf('은행') >= 0 || nm.indexOf('카드') >= 0) {
+        return '금융/보험';
+      }
+      if (nm.indexOf('ETF') >= 0 || nm.indexOf('지수') >= 0 || nm.indexOf('인덱스') >= 0 || nm.indexOf('KODEX') >= 0 || nm.indexOf('TIGER') >= 0 || nm.indexOf('국채') >= 0 || nm.indexOf('채권') >= 0) {
+        return '지수추종/채권/ETF';
+      }
+      
+      const isOvs = /^[a-zA-Z]/.test(sym);
+      return isOvs ? '해외 기타' : '국내 기타';
+    }
+
+    // 섹터별 도넛 차트 및 범례 동적 빌드 함수
+    function renderSectorDistribution(allAssets, totalPortfolioEval, usdRate, dispSym) {
+      const sectorMap = {};
+      allAssets.forEach(asset => {
+        const sym = asset.symbol;
+        const qty = Number(asset.qty || 0);
+        const curPriceKrw = Number(asset.currentPriceKrw || 1);
+        const evalAmt = Math.round(qty * curPriceKrw);
+        
+        const sector = getSectorForStock(sym, asset.name || sym);
+        if (!sectorMap[sector]) {
+          sectorMap[sector] = 0;
+        }
+        sectorMap[sector] += evalAmt;
+      });
+
+      const sectors = Object.keys(sectorMap).map(key => {
+        return {
+          name: key,
+          value: sectorMap[key],
+          weightPct: totalPortfolioEval > 0 ? (sectorMap[key] / totalPortfolioEval * 100) : 0
+        };
+      });
+      sectors.sort((a, b) => b.value - a.value);
+
+      // 범례 그리기
+      const legendContainer = document.getElementById("sectorLegend");
+      if (legendContainer) {
+        legendContainer.innerHTML = "";
+        if (sectors.length === 0) {
+          legendContainer.innerHTML = '<div class="empty-state" style="padding: 10px; grid-column: span 2;">등록된 자산이 없습니다.</div>';
+        } else {
+          sectors.forEach((s, idx) => {
+            const sectorColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f43f5e', '#fbbf24', '#06b6d4', '#64748b', '#a855f7', '#f472b6'];
+            const color = sectorColors[idx % sectorColors.length];
+            
+            const item = document.createElement("div");
+            item.style.display = "flex";
+            item.style.alignItems = "center";
+            item.style.justifyContent = "space-between";
+            item.style.padding = "4px 8px";
+            item.style.background = "rgba(255,255,255,0.01)";
+            item.style.borderRadius = "6px";
+            
+            item.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${color}; box-shadow: 0 0 4px ${color}; flex-shrink: 0;"></span>
+                <span style="font-weight: 600; color: var(--text-primary); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis;">${s.name}</span>
+              </div>
+              <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-secondary); flex-shrink: 0; margin-left: 6px;">
+                ${s.weightPct.toFixed(1)}%
+              </div>
+            `;
+            legendContainer.appendChild(item);
+          });
+        }
+      }
+
+      // Chart.js 캔버스 렌더링
+      const ctx = document.getElementById('sectorChart');
+      if (ctx) {
+        if (window.mySectorChart) {
+          window.mySectorChart.destroy();
+        }
+
+        if (sectors.length === 0) return;
+
+        const labels = sectors.map(s => s.name);
+        const data = sectors.map(s => Number(s.weightPct.toFixed(1)));
+        const sectorColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f43f5e', '#fbbf24', '#06b6d4', '#64748b', '#a855f7', '#f472b6'];
+
+        window.mySectorChart = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: labels,
+            datasets: [{
+              data: data,
+              backgroundColor: sectorColors.slice(0, sectors.length),
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.08)'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    return ` ${context.label}: ${context.raw}%`;
+                  }
+                }
+              }
+            },
+            cutout: '65%'
+          }
+        });
+      }
     }
 
     // ==================================================
@@ -3519,7 +3736,7 @@
                     <span style="color: var(--accent-purple); cursor: pointer; font-weight: bold; text-decoration: underline;" onclick="askAiForRebalancingAdvice(true)">
                       <i class="fa-solid fa-arrows-rotate"></i> AI 실시간 재분석 & 리포트 갱신
                     </span>
-                    <span>최종 생성 시각: ${new Date().toLocaleTimeString()} | Gemini 1.5 Flash</span>
+                    <span>최종 생성 시각: ${new Date().toLocaleTimeString()} | Gemini 2.5 Flash</span>
                   </div>
                 </div>
               `;

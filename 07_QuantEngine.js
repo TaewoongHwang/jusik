@@ -507,18 +507,20 @@ function calculate50DayMomentum_(symbol) {
  */
 function getQuantStockScoring(symbolsList) {
   var symbols = symbolsList || [];
+  
+  var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+  var allHoldings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT) || [];
+  var today = amTodayString_();
+  var holdings = filterHoldingsByMode_(allHoldings, portMode);
+  var uniqueSymbols = {};
+  holdings.forEach(function(h) {
+    var sym = normalizeStockSymbol_(h.symbol);
+    if (sym && sym !== 'CASH' && normalizeDateValue_(h.date) === today) {
+      uniqueSymbols[sym] = h.name || true;
+    }
+  });
+  
   if (symbols.length === 0) {
-    var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
-    var allHoldings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
-    var today = amTodayString_();
-    var holdings = filterHoldingsByMode_(allHoldings, portMode);
-    var uniqueSymbols = {};
-    holdings.forEach(function(h) {
-      var sym = normalizeStockSymbol_(h.symbol);
-      if (sym && sym !== 'CASH' && normalizeDateValue_(h.date) === today) {
-        uniqueSymbols[sym] = true;
-      }
-    });
     symbols = Object.keys(uniqueSymbols);
   }
   
@@ -548,9 +550,8 @@ function getQuantStockScoring(symbolsList) {
     
     var currentPrice = priceData ? parseFloat(priceData.close || 0) : 0;
     var name = priceData ? String(priceData.name || cleanSym).trim() : cleanSym;
-    
-    // 한글명 수복 사전 결합
-    name = getStockKoreanName_(cleanSym, name);
+    var existingName = (uniqueSymbols[cleanSym] && typeof uniqueSymbols[cleanSym] === 'string') ? uniqueSymbols[cleanSym] : null;
+    name = getStockKoreanName_(cleanSym, existingName || name);
     
     var isEtf = isEtf_(cleanSym, name);
     
@@ -1015,5 +1016,108 @@ function isEtf_(symbol, name) {
   }
   
   return false;
+}
+
+/**
+ * 🚀 두 종목의 일일 수익률 배열 간의 피어슨 상관계수 연산
+ */
+function calculateCorrelation_(returnsA, returnsB) {
+  var len = Math.min(returnsA.length, returnsB.length);
+  if (len < 5) return 0; // 최소 데이터 개수 부족 시
+  
+  var meanA = 0;
+  var meanB = 0;
+  for (var i = 0; i < len; i++) {
+    meanA += returnsA[i];
+    meanB += returnsB[i];
+  }
+  meanA /= len;
+  meanB /= len;
+  
+  var num = 0;
+  var denA = 0;
+  var denB = 0;
+  
+  for (var i = 0; i < len; i++) {
+    var diffA = returnsA[i] - meanA;
+    var diffB = returnsB[i] - meanB;
+    num += diffA * diffB;
+    denA += diffA * diffA;
+    denB += diffB * diffB;
+  }
+  
+  var denom = Math.sqrt(denA * denB);
+  return denom > 0 ? (num / denom) : 0;
+}
+
+/**
+ * 🚀 포트폴리오 내 상위 보유 주식 4개 간의 최근 15영업일 수익률 상관관계 행렬 연산
+ * API 타임아웃과 과부하 예방을 위해 상위 핵심 자산 4개로 제한하여 기동
+ */
+function calculatePortfolioCorrelationMatrix_(holdings) {
+  var activeStocks = (holdings || []).filter(function(h) {
+    var sym = normalizeStockSymbol_(h.symbol);
+    return sym && sym !== 'CASH' && !isEtf_(sym, h.name);
+  });
+  
+  // 평가액 내림차순 정렬하여 상위 4개 선정
+  activeStocks.sort(function(a, b) {
+    return parseFloat(b.eval_amount || 0) - parseFloat(a.eval_amount || 0);
+  });
+  var targets = activeStocks.slice(0, 4);
+  if (targets.length < 2) {
+    return '보유 개별 주식 종목이 부족하여 상관관계 연산을 생략합니다.';
+  }
+  
+  var returnsMap = {};
+  var namesMap = {};
+  
+  targets.forEach(function(h) {
+    var sym = normalizeStockSymbol_(h.symbol);
+    namesMap[sym] = h.name || sym;
+    try {
+      var yahooData = calculate50DayMomentumAndRSI_(sym, false);
+      if (yahooData && yahooData.prices && yahooData.prices.length >= 16) {
+        var prices = yahooData.prices;
+        var pLen = prices.length;
+        // 최근 16일 종가 추출하여 15개 수익률(%) 배열 생성
+        var recentPrices = prices.slice(Math.max(0, pLen - 16));
+        var returns = [];
+        for (var i = 1; i < recentPrices.length; i++) {
+          var prev = recentPrices[i - 1];
+          if (prev > 0) {
+            returns.push(((recentPrices[i] - prev) / prev) * 100);
+          }
+        }
+        if (returns.length >= 10) {
+          returnsMap[sym] = returns;
+        }
+      }
+    } catch(e) {
+      logWarn_('correlation_calc', 'Failed to fetch historical returns for ' + sym, { error: e.message });
+    }
+  });
+  
+  var keys = Object.keys(returnsMap);
+  if (keys.length < 2) {
+    return '상관관계 연산을 위한 유효 역사 데이터가 부족합니다.';
+  }
+  
+  var correlationDetails = [];
+  for (var i = 0; i < keys.length; i++) {
+    for (var j = i + 1; j < keys.length; j++) {
+      var symA = keys[i];
+      var symB = keys[j];
+      var corr = calculateCorrelation_(returnsMap[symA], returnsMap[symB]);
+      var strength = (Math.abs(corr) >= 0.7) ? '매우 높음 (동조화 리스크)' : ((Math.abs(corr) >= 0.4) ? '보통' : '낮음 (분산 효과 양호)');
+      
+      correlationDetails.push(
+        '- ' + namesMap[symA] + ' ↔ ' + namesMap[symB] + ': ' + 
+        '상관계수 ' + roundNumber_(corr, 2) + ' [' + strength + ']'
+      );
+    }
+  }
+  
+  return correlationDetails.join('\n');
 }
 

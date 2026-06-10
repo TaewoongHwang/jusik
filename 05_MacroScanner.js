@@ -346,8 +346,9 @@ function getIntegratedMacroAdvice_(forceRefresh) {
     '3. 반드시 격조 높고 전문성이 물씬 풍기는 냉철한 어조로 한글로 대답할 것.' + mockWarningText
   ].join('\n');
   
-  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-1.5-flash');
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-2.5-flash');
+  if (model === 'gemini-1.5-flash') { model = 'gemini-2.5-flash'; }
+  var url = 'https://generativelanguage.googleapis.com/v1/models/' + model + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.2 }

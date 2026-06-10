@@ -404,7 +404,7 @@ try {
   try {
     console.log("\n🚀 라이브 웹앱 주소 실시간 배포 릴리스 중...");
     // clasp deploy -i [DeploymentId] 옵션을 통해 주소를 평생 고정시키고 소스코드 버전만 실시간 덮어쓰기 갱신
-    const deployOut = execSync('npx clasp deploy -i AKfycbzAtj9DUWqvJC4HWhbgdyurw3TKKaFHWN3XwluBxYatl8ixo7Tk3Qm8oH5_snrtquPxKg -d "JUSIK AI Live Release"', { encoding: 'utf8' });
+    const deployOut = execSync('npx clasp deploy -i AKfycbzNBBpzQDGet6ccuIE8EF72D1R61MS4qkdKxnw2lvoBs3radRiBnsiFy5I1zUWCl5hGCg -d "JUSIK AI Live Release"', { encoding: 'utf8' });
     console.log(deployOut);
 
     console.log("==================================================");

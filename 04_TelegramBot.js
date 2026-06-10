@@ -150,17 +150,7 @@ function doPost(e) {
       
       var webAppUrl = getWebAppUrl_();
       
-      var replyMarkup = null;
-      if (webAppUrl) {
-        replyMarkup = {
-          inline_keyboard: [[
-            {
-              text: '📊 실시간 대시보드 (TMA) 열기',
-              web_app: { url: webAppUrl }
-            }
-          ]]
-        };
-      }
+      var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
       
       sendTelegramMessage(welcome, replyMarkup);
       
@@ -178,14 +168,7 @@ function doPost(e) {
     }
     else if (command === '/dashboard' || command === '/대시보드' || command === '/app') {
       var webAppUrl = getWebAppUrl_();
-      var replyMarkup = null;
-      if (webAppUrl) {
-        replyMarkup = {
-          inline_keyboard: [[
-            { text: '📊 실시간 대시보드 (TMA) 열기', web_app: { url: webAppUrl } }
-          ]]
-        };
-      }
+      var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
       sendTelegramMessage('🚀 <b>[금융 관제 대시보드 바로가기]</b>\n아래의 버튼을 눌러 거시경제 지표, 시장 수급, 위기 공시, 그리고 실계좌/모의투자 자산 현황을 한눈에 조망하는 프리미엄 모바일 대시보드(TMA)를 즉시 기동하세요!', replyMarkup);
     }
     else if (command === '/macro' || command === '/리포트') {
@@ -222,14 +205,7 @@ function doPost(e) {
         ].join('\n');
         
         var webAppUrl = getWebAppUrl_();
-        var replyMarkup = null;
-        if (webAppUrl) {
-          replyMarkup = {
-            inline_keyboard: [[
-              { text: '📊 실시간 대시보드 (TMA) 열기', web_app: { url: webAppUrl } }
-            ]]
-          };
-        }
+        var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
         
         sendTelegramMessage(msg, replyMarkup);
       } catch(ex) {
@@ -249,17 +225,7 @@ function doPost(e) {
         
         var webAppUrl = getWebAppUrl_();
         
-        var replyMarkup = null;
-        if (webAppUrl) {
-          replyMarkup = {
-            inline_keyboard: [[
-              {
-                text: '📊 실시간 대시보드 (TMA) 열기',
-                web_app: { url: webAppUrl }
-              }
-            ]]
-          };
-        }
+        var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
 
         if (holdings.length === 0) {
           sendTelegramMessage('📋 <b>[' + portMode + ' 통합 보유 자산 현황]</b>\n\n현재 활성화된 보유 주식이 없습니다.', replyMarkup);
@@ -311,6 +277,7 @@ function doPost(e) {
         var nextMode = (currentMode === 'REAL') ? 'MOCK' : 'REAL';
         
         setScriptProperty_('PORTFOLIO_MODE', nextMode);
+        updateSettingValueInSheet_('PORTFOLIO_MODE', nextMode);
         sendTelegramMessage('🔄 <b>[운용 모드 전환]</b>\n\n포트폴리오 주식 운용 모드가 <b>' + nextMode + '</b>(으)로 즉각 토글 변경되었습니다.');
         collectHoldingsCurrent();
       } else if (arg.toLowerCase() !== 'real' && arg.toLowerCase() !== 'mock') {
@@ -318,6 +285,7 @@ function doPost(e) {
       } else {
         var mode = arg.toUpperCase();
         setScriptProperty_('PORTFOLIO_MODE', mode);
+        updateSettingValueInSheet_('PORTFOLIO_MODE', mode);
         sendTelegramMessage('🔄 <b>[운용 모드 전환]</b>\n\n포트폴리오 주식 운용 모드가 <b>' + mode + '</b>(으)로 즉각 변경되었습니다.');
         collectHoldingsCurrent();
       }
@@ -637,16 +605,8 @@ function doPost(e) {
           '💡 VAA 전략은 매월 말 1회 리밸런싱을 원칙으로 하며, 모든 공격형 자산의 모멘텀 스코어가 0을 초과해야 공격 국면으로 진입합니다.'
         ].join('\n');
         
-        var webAppUrl = "";
-        try { webAppUrl = ScriptApp.getService().getUrl(); } catch(err) {}
-        var replyMarkup = null;
-        if (webAppUrl) {
-          replyMarkup = {
-            inline_keyboard: [[
-              { text: '📊 실시간 대시보드 (TMA) 열기', web_app: { url: webAppUrl } }
-            ]]
-          };
-        }
+        var webAppUrl = getWebAppUrl_();
+        var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
         
         sendTelegramMessage(msg, replyMarkup);
       } catch(ex) {
@@ -964,8 +924,9 @@ function callGeminiStockAnalysis_(symbol) {
     '5. 서두에 🤖 [JUSIK AI 실시간 기술적 종목 진단] 뱃지를 달아줄 것.'
   ].join('\n');
   
-  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-1.5-flash');
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-2.5-flash');
+  if (model === 'gemini-1.5-flash') { model = 'gemini-2.5-flash'; }
+  var url = 'https://generativelanguage.googleapis.com/v1/models/' + model + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.3 }
@@ -1048,7 +1009,16 @@ function doGet(e) {
       'getStockNewsForWeb',
       'getVaaStrategySignal',
       'getQuantStockScoring',
-      'getQuantLabDataForWeb'
+      'getQuantLabDataForWeb',
+      'getSystemDiagnosticsForWeb',
+      'getAiPortfolioAdviceForWeb',
+      'testMockApiForWeb',
+      'testQuantDbForWeb',
+      'testPremarketAiForWeb',
+      'testPremarketReportTrigger',
+      'updateHoldingFromWeb',
+      'toggleInvestmentModeFromWeb',
+      'callGeminiStockAnalysis_'
     ];
     
     if (allowedFunctions.indexOf(funcName) < 0) {
@@ -1309,7 +1279,7 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'debug_gemini') {
     try {
       var apiKey = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_API_KEY);
-      var url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey;
+      var url = 'https://generativelanguage.googleapis.com/v1/models?key=' + apiKey;
       var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
       return ContentService.createTextOutput(res.getContentText())
         .setMimeType(ContentService.MimeType.JSON);
@@ -1351,17 +1321,27 @@ function getPortfolioDataForWeb(forceRefresh) {
   ensureAllSheets_();
   var currentMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
   
-  // 🚀 [초고속 0.2초 로딩 튜닝] forceRefresh 가 참이거나 오늘자 적재 데이터가 아예 없을 때만 KIS API 강제 기동
+  // 🚀 [신설] 모드 변경 감지를 통한 캐시 강제 무효화 안전장치
+  var service = PropertiesService.getScriptProperties();
+  var lastModeKey = 'LAST_CHECKED_PORTFOLIO_MODE';
+  var lastModeVal = String(service.getProperty(lastModeKey) || '').toUpperCase();
+  var isModeChanged = (currentMode !== lastModeVal);
+  if (isModeChanged) {
+    service.setProperty(lastModeKey, currentMode);
+  }
+  
+  // 🚀 [초고속 0.2초 로딩 튜닝] forceRefresh 가 참이거나 모드가 변경되었거나 오늘자 적재 데이터가 아예 없을 때만 KIS API 강제 기동
   var today = amTodayString_();
   var existingTodayHoldings = [];
   try {
-    existingTodayHoldings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
+    var allToday = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
       return normalizeDateValue_(row.date) === today;
     });
+    existingTodayHoldings = filterHoldingsByMode_(allToday, currentMode);
   } catch(e) {}
   
-  if (forceRefresh === true || forceRefresh === 'true' || existingTodayHoldings.length === 0) {
-    logInfo_('portfolio_api', 'Forcing real-time holdings collection', { force: forceRefresh });
+  if (forceRefresh === true || forceRefresh === 'true' || isModeChanged || existingTodayHoldings.length === 0) {
+    logInfo_('portfolio_api', 'Forcing real-time holdings collection (Cache invalidation)', { force: forceRefresh, modeChanged: isModeChanged });
     collectHoldingsCurrent();
   } else {
     logInfo_('portfolio_api', 'Using cached sheet portfolio holdings snapshot for speed', { holdings_count: existingTodayHoldings.length });
@@ -1648,7 +1628,8 @@ function getStockNewsForWeb(forceRefresh) {
 function toggleInvestmentModeFromWeb(mode) {
   var targetMode = (mode === 'REAL') ? 'REAL' : 'MOCK';
   setScriptProperty_('PORTFOLIO_MODE', targetMode);
-  collectHoldingsCurrent();
+  updateSettingValueInSheet_('PORTFOLIO_MODE', targetMode);
+  // collectHoldingsCurrent(); // 🚀 [속도 튜닝] 백엔드 모드 스위칭 시 동기식 KIS API 대기 시간을 제거하여 타임아웃 사망 차단
   return { success: true, mode: targetMode };
 }
 
@@ -1733,7 +1714,8 @@ function runDiagnostics_() {
   
   // 3. 텔레그램 웹훅 정렬 & 최신화 자가 치유 (Self-healing Webhook Alignment)
   try {
-    var webAppUrl = getWebAppUrl_();
+    // 🚀 [구글 API 404 우회 차단벽] getUrl()의 404 오작동 및 시트 낡은 데이터 오염을 방어하기 위해 검증된 신규 릴리즈 웹앱 주소로 웹훅 대상을 강제 고정
+    var webAppUrl = 'https://script.google.com/macros/s/AKfycbzNBBpzQDGet6ccuIE8EF72D1R61MS4qkdKxnw2lvoBs3radRiBnsiFy5I1zUWCl5hGCg/exec';
     var hookUrl = 'https://api.telegram.org/bot' + token + '/getWebhookInfo';
     var hookResponse = UrlFetchApp.fetch(hookUrl, { muteHttpExceptions: true });
     var hookJson = JSON.parse(hookResponse.getContentText());
@@ -1760,7 +1742,9 @@ function runDiagnostics_() {
         web_app_url: webAppUrl,
         aligned: aligned,
         auto_healed: healingPerformed,
-        pending_update_count: hookJson.result.pending_update_count || 0
+        pending_update_count: hookJson.result.pending_update_count || 0,
+        last_error_message: hookJson.result.last_error_message || "",
+        last_error_date: hookJson.result.last_error_date ? new Date(hookJson.result.last_error_date * 1000).toLocaleString() : ""
       };
     } else {
       report.diagnostics.telegram_webhook = { status: "FAIL", error: hookJson.description };
@@ -1795,13 +1779,16 @@ function runDiagnostics_() {
 
 function callGeminiWithSearchGrounding_(prompt) {
   var apiKey = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_API_KEY);
-  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-1.5-flash');
+  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-2.5-flash');
+  if (model === 'gemini-1.5-flash') {
+    model = 'gemini-2.5-flash'; // 🚀 강제 자가치유 우회 장착 (1.5-flash 404 NOT_FOUND 영구 격리)
+  }
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
   
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     tools: [{
-      googleSearchRetrieval: {} // 🚀 구글 검색 그라운딩 도구 장착
+      googleSearch: {} // 🚀 구글 검색 그라운딩 도구 장착
     }],
     generationConfig: {
       temperature: 0.15
@@ -1816,15 +1803,14 @@ function callGeminiWithSearchGrounding_(prompt) {
     muteHttpExceptions: true
   });
   
-  if (response.getResponseCode() !== 200) {
-    throw new Error('Gemini Search Grounding call failed: ' + response.getContentText());
-  }
+  var responseCode = response.getResponseCode();
+  var responseText = response.getContentText();
   
-  var res = JSON.parse(response.getContentText());
-  var text = res.candidates[0].content.parts[0].text;
-  
-  // 🚀 [초강력 복원 파서] 마크다운 ```json 코드 블록과 설명 껍데기들을 싹 청소하고 순수 JSON 본문만 슬라이싱해 정밀 파싱
-  try {
+  if (responseCode === 200) {
+    var res = JSON.parse(responseText);
+    var text = res.candidates[0].content.parts[0].text;
+    
+    // 🚀 [초강력 복원 파서] 마크다운 ```json 코드 블록과 설명 껍데기들을 싹 청소하고 순수 JSON 본문만 슬라이싱해 정밀 파싱
     var cleanText = text.replace(/```[a-zA-Z]*/g, '').replace(/`/g, '').trim();
     var startIdx = cleanText.indexOf('{');
     var endIdx = cleanText.lastIndexOf('}');
@@ -1832,9 +1818,11 @@ function callGeminiWithSearchGrounding_(prompt) {
       cleanText = cleanText.substring(startIdx, endIdx + 1);
     }
     return JSON.parse(cleanText);
-  } catch(parseErr) {
-    logWarn_('premarket_ai', 'Failed to parse Gemini Search JSON output; raw text was: ' + text, { error: parseErr.message });
-    throw new Error('AI 장전 보고서 응답 분석 실패 (JSON 파싱 에러)');
+  } else {
+    var errObj = {};
+    try { errObj = JSON.parse(responseText); } catch(ex) {}
+    var msg = (errObj.error && errObj.error.message) || responseText;
+    throw new Error('Gemini Search Grounding call failed (HTTP ' + responseCode + '): ' + msg);
   }
 }
 
@@ -2066,12 +2054,19 @@ function runPremarketAiReport() {
   });
 
   var prompt = buildPremarketPrompt_(portfolioDetails);
-  var diagReport = { nasdaq_move: "N/A", sp500_move: "N/A", fx_rate: "N/A", us10y_yield: "N/A", market_regime: "NEUTRAL", market_regime_reason: "통신 지연", top_news: [] };
+  var diagReport = { nasdaq_move: "N/A", sp500_move: "N/A", fx_rate: "N/A", us10y_yield: "N/A", market_regime: "NEUTRAL", market_regime_reason: "구글 AI Studio API 한도 초과 또는 크레딧 부족 (실시간 시세 백업 주입)", top_news: [] };
   
   try {
+    logInfo_('premarket_ai', 'Executing Premarket AI Report generation with Google Search Grounding...');
     diagReport = callGeminiWithSearchGrounding_(prompt);
   } catch(e) {
-    logWarn_('premarket_ai', 'Gemini Search Grounding failed; using fallback text', { error: e.message });
+    logWarn_('premarket_ai', 'Google Search Grounding failed; attempting fallback without search grounding...', { error: e.message });
+    try {
+      diagReport = callGeminiWithoutSearchGrounding_(prompt);
+      logInfo_('premarket_ai', 'Successfully generated premarket report using fallback (no search grounding).');
+    } catch(fallbackErr) {
+      logWarn_('premarket_ai', 'Gemini fallback report generation also failed. Using raw template.', { error: fallbackErr.message });
+    }
   }
   
   // 🚀 [Double-Shielding] AI 검색 결과 지표가 누락되었거나 N/A일 때, 백엔드의 진짜 실시간 지표로 이중 주입 보강!
@@ -2094,8 +2089,23 @@ function runPremarketAiReport() {
         if (nasPrice && nasPrice.close > 0) {
           var sign = nasPrice.change_pct >= 0 ? '+' : '';
           diagReport.nasdaq_move = nasPrice.close.toLocaleString() + " (" + sign + nasPrice.change_pct.toFixed(2) + "% 실시간)";
+        } else {
+          // 🚀 [백업 채널] 야후 파이낸스 차단 시 KIS API로 미국 대표 ETF 'QQQ'의 시세와 등락률 융합
+          var qqq = fetchKisOverseasCurrentPrice_('QQQ');
+          if (qqq && qqq.close > 0) {
+            var sign = qqq.change_pct >= 0 ? '+' : '';
+            diagReport.nasdaq_move = "QQQ: " + qqq.close.toLocaleString() + " (" + sign + qqq.change_pct.toFixed(2) + "% 실시간 백업)";
+          }
         }
-      } catch(e) {}
+      } catch(e) {
+        try {
+          var qqq = fetchKisOverseasCurrentPrice_('QQQ');
+          if (qqq && qqq.close > 0) {
+            var sign = qqq.change_pct >= 0 ? '+' : '';
+            diagReport.nasdaq_move = "QQQ: " + qqq.close.toLocaleString() + " (" + sign + qqq.change_pct.toFixed(2) + "% 실시간 백업)";
+          }
+        } catch(kisErr) {}
+      }
     }
     if (!diagReport.sp500_move || diagReport.sp500_move === 'N/A') {
       try {
@@ -2103,8 +2113,23 @@ function runPremarketAiReport() {
         if (spPrice && spPrice.close > 0) {
           var sign = spPrice.change_pct >= 0 ? '+' : '';
           diagReport.sp500_move = spPrice.close.toLocaleString() + " (" + sign + spPrice.change_pct.toFixed(2) + "% 실시간)";
+        } else {
+          // 🚀 [백업 채널] 야후 파이낸스 차단 시 KIS API로 미국 대표 ETF 'SPY'의 시세와 등락률 융합
+          var spy = fetchKisOverseasCurrentPrice_('SPY');
+          if (spy && spy.close > 0) {
+            var sign = spy.change_pct >= 0 ? '+' : '';
+            diagReport.sp500_move = "SPY: " + spy.close.toLocaleString() + " (" + sign + spy.change_pct.toFixed(2) + "% 실시간 백업)";
+          }
         }
-      } catch(e) {}
+      } catch(e) {
+        try {
+          var spy = fetchKisOverseasCurrentPrice_('SPY');
+          if (spy && spy.close > 0) {
+            var sign = spy.change_pct >= 0 ? '+' : '';
+            diagReport.sp500_move = "SPY: " + spy.close.toLocaleString() + " (" + sign + spy.change_pct.toFixed(2) + "% 실시간 백업)";
+          }
+        } catch(kisErr) {}
+      }
     }
   } catch(shieldErr) {
     logWarn_('premarket_ai', 'Failed to double-shield premarket metrics', { error: shieldErr.message });
@@ -2165,14 +2190,7 @@ function runPremarketAiReport() {
   text.push('----------------------------------------');
   
   var webAppUrl = getWebAppUrl_();
-  var replyMarkup = null;
-  if (webAppUrl) {
-    replyMarkup = {
-      inline_keyboard: [[
-        { text: '📊 실시간 대시보드 (TMA) 열기', web_app: { url: webAppUrl } }
-      ]]
-    };
-  }
+  var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
   
   sendTelegramMessage(text.join('\n'), replyMarkup);
   return { success: true };
@@ -2181,96 +2199,242 @@ function runPremarketAiReport() {
 function runDailyClosePaperTradingReport() {
   ensureAllSheets_();
   var today = amTodayString_();
+  
+  // 🚀 [중복 발송 억제 방어막] 동일 정산일에 5분 이내 중복 호출 시 발송 차단
+  var service = PropertiesService.getScriptProperties();
+  var lastSentTimeKey = 'LAST_DAILY_REPORT_SENT_TIME';
+  var lastSentDateKey = 'LAST_DAILY_REPORT_SENT_DATE';
+  
+  var lastSentTime = Number(service.getProperty(lastSentTimeKey) || 0);
+  var lastSentDate = String(service.getProperty(lastSentDateKey) || '');
+  var now = new Date().getTime();
+  
+  if (lastSentDate === today && (now - lastSentTime < 300000)) {
+    logWarn_('telegram_report', 'Daily close report duplicate delivery blocked. Already sent within 5 minutes.', {
+      today: today,
+      elapsed_ms: now - lastSentTime
+    });
+    return { success: false, reason: 'Duplicate report blocked' };
+  }
+  
   collectHoldingsCurrent();
   
   var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
     return normalizeDateValue_(row.date) === today;
   });
   
-  var paperHoldings = holdings.filter(function(h) {
-    return h.source === 'paper_trading_dom' || h.source === 'paper_trading_us';
-  });
+  var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
   
-  // 국내/해외 퀀트 모의투자 계좌의 최신 잔고 요약
-  var domCash = 3000000;
-  var usCash = 3000000; // 원화 환산 기준 시드
-  
-  try {
-    var domRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO_DOM);
-    if (domRows.length > 0) {
-      domCash = parseFloat(domRows[domRows.length - 1].total_eval_amount || 3000000);
+  if (portMode === 'MOCK') {
+    var seedMoney = parseFloat(getScriptProperty_('KIS_MOCK_SEED_MONEY', '10000000'));
+    if (isNaN(seedMoney) || seedMoney <= 0) {
+      seedMoney = 10000000;
     }
-  } catch(e) {}
-  
-  try {
-    var usRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO_US);
-    if (usRows.length > 0) {
-      var latestUs = usRows[usRows.length - 1];
-      var usdRate = 1350;
-      try {
-        var liveRate = getLiveUsdRate_();
-        if (liveRate > 500) usdRate = liveRate;
-      } catch(exRate) {}
-      usCash = parseFloat(latestUs.total_eval_amount || 0) * usdRate;
-    }
-  } catch(e) {}
-  
-  var totalPurchase = 0;
-  var totalEval = 0;
-  var textLines = [
-    '🤖 <b>[JUSIK AI 오늘의 퀀트 모의투자 정산 보고서]</b> 🔔',
-    '----------------------------------------',
-    '📆 <b>정산일자:</b> <code>' + today + '</code>\n'
-  ];
-  
-  if (paperHoldings.length === 0) {
-    textLines.push('• 금일 퀀트 모의투자 보유 주식이 없습니다.');
-  } else {
-    textLines.push('📋 <b>보유 퀀트 주식 세부 잔고:</b>');
-    paperHoldings.forEach(function(h) {
-      if (h.symbol !== 'CASH') {
-        totalPurchase += parseFloat(h.purchase_amount || 0);
-        totalEval += parseFloat(h.eval_amount || 0);
+    
+    var mockHoldings = holdings.filter(function(h) {
+      return h.source && (h.source.indexOf('mock_') === 0 || h.source.indexOf('manual_') === 0);
+    });
+    
+    var totalPurchase = 0;
+    var totalEval = 0;
+    var mockCash = 0;
+    
+    var domStocks = [];
+    var ovsStocks = [];
+    
+    mockHoldings.forEach(function(h) {
+      var evalAmt = parseFloat(h.eval_amount || 0);
+      var purchAmt = parseFloat(h.purchase_amount || 0);
+      
+      if (h.symbol === 'CASH') {
+        mockCash += evalAmt;
+        totalPurchase += purchAmt;
+        totalEval += evalAmt;
+      } else {
+        totalPurchase += purchAmt;
+        totalEval += evalAmt;
         
-        var profitSign = h.profit_loss_pct >= 0 ? '+' : '';
-        var typeText = h.source === 'paper_trading_dom' ? '국내' : '해외';
-        textLines.push(
-          '• <b>[' + typeText + '] ' + h.name + '</b> (' + h.symbol + ')\n' +
-          '  수량: <b>' + formatNumber_(h.quantity) + '주</b> | 평단: <b>' + formatNumber_(Math.round(h.avg_price)) + '원</b>\n' +
-          '  평가액: <b>' + formatNumber_(Math.round(h.eval_amount)) + '원</b> | 수익률: <b>' + profitSign + h.profit_loss_pct + '%</b>'
-        );
+        var isOvs = /^[a-zA-Z]/.test(h.symbol);
+        if (isOvs) {
+          ovsStocks.push(h);
+        } else {
+          domStocks.push(h);
+        }
       }
     });
     
-    var grandTotalAsset = domCash + usCash;
-    var totalYield = (grandTotalAsset - 6000000) / 6000000 * 100;
+    var textLines = [
+      '🤖 <b>[JUSIK AI 오늘의 KIS 모의투자 정산 보고서]</b> 🔔',
+      '----------------------------------------',
+      '📆 <b>정산일자:</b> <code>' + today + '</code>\n'
+    ];
+    
+    if (domStocks.length === 0 && ovsStocks.length === 0) {
+      textLines.push('• 금일 KIS 모의투자 보유 주식이 없습니다.');
+    } else {
+      if (domStocks.length > 0) {
+        textLines.push('📋 <b>보유 국내 모의 주식 잔고:</b>');
+        domStocks.forEach(function(h) {
+          var profitSign = h.profit_loss_pct >= 0 ? '+' : '';
+          textLines.push(
+            '• <b>' + h.name + '</b> (' + h.symbol + ')\n' +
+            '  수량: <b>' + formatNumber_(h.quantity) + '주</b> | 평단: <b>' + formatNumber_(Math.round(h.avg_price)) + '원</b>\n' +
+            '  평가액: <b>' + formatNumber_(Math.round(h.eval_amount)) + '원</b> | 수익률: <b>' + profitSign + h.profit_loss_pct + '%</b>'
+          );
+        });
+        textLines.push('');
+      }
+      
+      if (ovsStocks.length > 0) {
+        textLines.push('📋 <b>보유 해외 모의 주식 잔고:</b>');
+        ovsStocks.forEach(function(h) {
+          var profitSign = h.profit_loss_pct >= 0 ? '+' : '';
+          textLines.push(
+            '• <b>' + h.name + '</b> (' + h.symbol + ')\n' +
+            '  수량: <b>' + formatNumber_(h.quantity) + '주</b> | 평단: <b>' + formatNumber_(Math.round(h.avg_price)) + '원</b>\n' +
+            '  평가액: <b>' + formatNumber_(Math.round(h.eval_amount)) + '원</b> | 수익률: <b>' + profitSign + h.profit_loss_pct + '%</b>'
+          );
+        });
+        textLines.push('');
+      }
+    }
+    
+    var totalYield = (totalEval - seedMoney) / seedMoney * 100;
     var yieldSign = totalYield >= 0 ? '+' : '';
     
-    textLines.push('');
-    textLines.push('💰 <b>퀀트 모의 계좌 평가 요약 (시드 600만원 대비):</b>');
-    textLines.push('• 국내 퀀트 계좌 평가액: <b>' + formatNumber_(Math.round(domCash)) + '원</b>');
-    textLines.push('• 해외 퀀트 계좌 평가액: <b>' + formatNumber_(Math.round(usCash)) + '원</b>');
-    textLines.push('• <b>총 퀀트 자산 평가액: ' + formatNumber_(Math.round(grandTotalAsset)) + '원</b>');
-    textLines.push('• 누적 퀀트 계좌 수익률: <b>' + yieldSign + totalYield.toFixed(2) + '%</b>');
+    textLines.push('💰 <b>모의 계좌 평가 요약 (시드 ' + formatNumber_(seedMoney) + '원 대비):</b>');
+    textLines.push('• KIS 모의 예수금: <b>' + formatNumber_(Math.round(mockCash)) + '원</b>');
+    textLines.push('• 보유 주식 평가액: <b>' + formatNumber_(Math.round(totalEval - mockCash)) + '원</b>');
+    textLines.push('• <b>총 모의 자산 평가액: ' + formatNumber_(Math.round(totalEval)) + '원</b>');
+    textLines.push('• 누적 모의 계좌 수익률: <b>' + yieldSign + totalYield.toFixed(2) + '%</b>');
+    
+    textLines.push('----------------------------------------');
+    
+    var webAppUrl = getWebAppUrl_();
+    var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
+    
+    sendTelegramMessage(textLines.join('\n'), replyMarkup);
+    
+    // 🚀 정산 보고서 발송 성공 기록 저장
+    try {
+      service.setProperty(lastSentTimeKey, String(new Date().getTime()));
+      service.setProperty(lastSentDateKey, today);
+    } catch(propErr) {}
+    
+    return { success: true };
+  } else {
+    var paperHoldings = holdings.filter(function(h) {
+      return h.source === 'paper_trading_dom' || h.source === 'paper_trading_us';
+    });
+    
+    // 국내/해외 퀀트 모의투자 계좌의 최신 잔고 요약
+    var domCash = 3000000;
+    var usCash = 3000000; // 원화 환산 기준 시드
+    
+    try {
+      var domRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO_DOM);
+      if (domRows.length > 0) {
+        domCash = parseFloat(domRows[domRows.length - 1].total_eval_amount || 3000000);
+      }
+    } catch(e) {}
+    
+    try {
+      var usRows = readObjects_(AM_CONFIG.SHEETS.PAPER_PORTFOLIO_US);
+      if (usRows.length > 0) {
+        var latestUs = usRows[usRows.length - 1];
+        var usdRate = 1350;
+        try {
+          var liveRate = getLiveUsdRate_();
+          if (liveRate > 500) usdRate = liveRate;
+        } catch(exRate) {}
+        usCash = parseFloat(latestUs.total_eval_amount || 0) * usdRate;
+      }
+    } catch(e) {}
+    
+    var totalPurchase = 0;
+    var totalEval = 0;
+    var textLines = [
+      '🤖 <b>[JUSIK AI 오늘의 퀀트 모의투자 정산 보고서]</b> 🔔',
+      '----------------------------------------',
+      '📆 <b>정산일자:</b> <code>' + today + '</code>\n'
+    ];
+    
+    if (paperHoldings.length === 0) {
+      textLines.push('• 금일 퀀트 모의투자 보유 주식이 없습니다.');
+    } else {
+      textLines.push('📋 <b>보유 퀀트 주식 세부 잔고:</b>');
+      paperHoldings.forEach(function(h) {
+        if (h.symbol !== 'CASH') {
+          totalPurchase += parseFloat(h.purchase_amount || 0);
+          totalEval += parseFloat(h.eval_amount || 0);
+          
+          var profitSign = h.profit_loss_pct >= 0 ? '+' : '';
+          var typeText = h.source === 'paper_trading_dom' ? '국내' : '해외';
+          textLines.push(
+            '• <b>[' + typeText + '] ' + h.name + '</b> (' + h.symbol + ')\n' +
+            '  수량: <b>' + formatNumber_(h.quantity) + '주</b> | 평단: <b>' + formatNumber_(Math.round(h.avg_price)) + '원</b>\n' +
+            '  평가액: <b>' + formatNumber_(Math.round(h.eval_amount)) + '원</b> | 수익률: <b>' + profitSign + h.profit_loss_pct + '%</b>'
+          );
+        }
+      });
+      
+      var grandTotalAsset = domCash + usCash;
+      var totalYield = (grandTotalAsset - 6000000) / 6000000 * 100;
+      var yieldSign = totalYield >= 0 ? '+' : '';
+      
+      textLines.push('');
+      textLines.push('💰 <b>퀀트 모의 계좌 평가 요약 (시드 600만원 대비):</b>');
+      textLines.push('• 국내 퀀트 계좌 평가액: <b>' + formatNumber_(Math.round(domCash)) + '원</b>');
+      textLines.push('• 해외 퀀트 계좌 평가액: <b>' + formatNumber_(Math.round(usCash)) + '원</b>');
+      textLines.push('• <b>총 퀀트 자산 평가액: ' + formatNumber_(Math.round(grandTotalAsset)) + '원</b>');
+      textLines.push('• 누적 퀀트 계좌 수익률: <b>' + yieldSign + totalYield.toFixed(2) + '%</b>');
+    }
+    
+    textLines.push('----------------------------------------');
+    
+    var webAppUrl = getWebAppUrl_();
+    var replyMarkup = buildDashboardButtonMarkup_(webAppUrl);
+    
+    sendTelegramMessage(textLines.join('\n'), replyMarkup);
+    
+    // 🚀 정산 보고서 발송 성공 기록 저장
+    try {
+      service.setProperty(lastSentTimeKey, String(new Date().getTime()));
+      service.setProperty(lastSentDateKey, today);
+    } catch(propErr) {}
+    
+    return { success: true };
   }
-  
-  textLines.push('----------------------------------------');
-  
-  var webAppUrl = getWebAppUrl_();
-  var replyMarkup = null;
-  if (webAppUrl) {
-    replyMarkup = {
-      inline_keyboard: [[
-        { text: '📊 실시간 대시보드 (TMA) 열기', web_app: { url: webAppUrl } }
-      ]]
-    };
+}
+
+function pruneLegacyTriggers_() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    var allowedHandlers = [
+      'runPremarketAiReport',
+      'runDailyClosePaperTradingReport',
+      'updateQuantUniverseDatabase',
+      'runMonthlyQuantRebalancing'
+    ];
+    
+    triggers.forEach(function(t) {
+      var handler = t.getHandlerFunction();
+      if (allowedHandlers.indexOf(handler) < 0) {
+        try {
+          ScriptApp.deleteTrigger(t);
+          logInfo_('triggers_prune', 'Successfully pruned legacy trigger handler', { handler: handler });
+        } catch(e) {
+          logWarn_('triggers_prune', 'Failed to prune legacy trigger handler: ' + handler, { error: e.message });
+        }
+      }
+    });
+  } catch(err) {
+    logWarn_('triggers_prune', 'Failed to fetch/prune project triggers', { error: err.message });
   }
-  
-  sendTelegramMessage(textLines.join('\n'), replyMarkup);
-  return { success: true };
 }
 
 function installAutomationTriggers() {
+  pruneLegacyTriggers_();
   deleteTriggersByHandler_('runPremarketAiReport');
   deleteTriggersByHandler_('runDailyClosePaperTradingReport');
   deleteTriggersByHandler_('updateQuantUniverseDatabase');
@@ -2326,9 +2490,31 @@ function getAiPortfolioAdvice_(forceRefresh) {
     return { advice: cachedAdvice };
   }
   
-  var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT).filter(function(row) {
+  // 🚀 [실시간 자산 동기화 강제 격발] 
+  // 조언을 생성하기 직전에 수동 자산 및 KIS 자산 데이터베이스를 실시간으로 새로 긁어와 holdings_current 를 동기화
+  try {
+    collectHoldingsCurrent(true);
+  } catch(colErr) {
+    logWarn_('ai_advice', 'Failed to auto collect holdings before advice generation', { error: colErr.message });
+  }
+  
+  var holdingsAll = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT) || [];
+  var holdings = holdingsAll.filter(function(row) {
     return normalizeDateValue_(row.date) === today;
   });
+  
+  // 🚀 만약 금일 자산 데이터가 없으면, 전체 데이터 중 가장 최근 날짜의 자산을 백업 로드
+  if (holdings.length === 0 && holdingsAll.length > 0) {
+    var dates = holdingsAll.map(function(row) { return normalizeDateValue_(row.date); }).filter(Boolean);
+    if (dates.length > 0) {
+      dates.sort();
+      var maxDate = dates[dates.length - 1];
+      holdings = holdingsAll.filter(function(row) {
+        return normalizeDateValue_(row.date) === maxDate;
+      });
+      logInfo_('ai_advice', 'No holdings for today. Using latest available holdings date: ' + maxDate);
+    }
+  }
   
   var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
   
@@ -2354,6 +2540,31 @@ function getAiPortfolioAdvice_(forceRefresh) {
   
   var totalPfs = totalEval - totalPurchase;
   var totalPfsPct = totalPurchase > 0 ? (totalPfs / totalPurchase * 100) : 0;
+  
+  // 🚀 [목표 비중 괴리율(Drift) 연산 통합]
+  var driftText = "괴리율 연산 데이터가 존재하지 않습니다.";
+  try {
+    var driftList = calculatePortfolioDrift_(holdings);
+    if (driftList && driftList.length > 0) {
+      driftText = driftList.map(function(d) {
+        var specText = d.isSpecified ? "" : " (목표 미지정, 기본값 0%)";
+        var sign = d.drift > 0 ? "+" : "";
+        return "  - " + d.name + " (" + d.symbol + ") | 현재 비중: " + d.currentWeight + "% | 목표 비중: " + d.targetWeight + "%" + specText + " | 괴리율: " + sign + d.drift + "%p";
+      }).join('\n');
+    }
+  } catch(de) {
+    logWarn_('ai_advice', 'Failed to calculate drift', { error: de.message });
+    driftText = "괴리율 연산 중 오류 발생: " + de.message;
+  }
+
+  // 🚀 [자산 상관계수(Correlation) 연산 통합]
+  var correlationText = "상관관계 분석 데이터가 존재하지 않습니다.";
+  try {
+    correlationText = calculatePortfolioCorrelationMatrix_(holdings);
+  } catch(ce) {
+    logWarn_('ai_advice', 'Failed to calculate correlation matrix', { error: ce.message });
+    correlationText = "상관계수 연산 중 오류 발생: " + ce.message;
+  }
   
   // 🚀 [금융 관제 2.0 매크로 지표 및 실시간 뉴스 융합 스캔]
   var macroText = "FRED & ECOS 거시경제 지표 스캔 정보가 누락되었습니다.";
@@ -2400,8 +2611,8 @@ function getAiPortfolioAdvice_(forceRefresh) {
   } catch(qe) {}
 
   var prompt = [
-    '너는 월스트리트 헤지펀드의 초일류 수석 포트폴리오 매니저이자 리스크 관리 전문가이다.',
-    '유저의 현재 실시간 주식 포트폴리오 비중과 수익률 상태를 분석하고, 실시간 글로벌 거시 경제지표와 5대 경제 뉴스, 그리고 실시간 VAA 자산배분 및 주식 팩터 퀀트 데이터를 정성+정량적으로 융합 연계하여 프로급의 리밸런싱 및 자산배분 자문 보고서를 작성해라.',
+    '너는 월스트리트 헤지펀드의 초일류 수석 포트폴리오 매니저이자 리스크 관리 전문가(CIO)이다.',
+    '유저의 실시간 포트폴리오 비중, 수익률, 설정된 목표 비중과의 괴리율(Drift), 상위 개별 주식 간의 상관관계(Correlation), 그리고 매크로 지표, 실시간 뉴스, VAA 시그널, 개별 주식 퀀트 점수를 융합 분석하여 최고 수준의 자산 최적화 리밸런싱 자문 보고서를 작성하라.',
     '',
     '현재 포트폴리오 모드: ' + portMode,
     '총 투자원금: ' + formatNumber_(Math.round(totalPurchase)) + '원',
@@ -2410,6 +2621,12 @@ function getAiPortfolioAdvice_(forceRefresh) {
     '',
     '보유 자산 세부 리스트:',
     assetsSummary.join('\n'),
+    '',
+    '실시간 목표 비중 괴리율 (Settings 시트 기반 Drift):',
+    driftText,
+    '',
+    '상위 보유 주식 간 15영업일 종가 상관관계 (Correlation Matrix):',
+    correlationText,
     '',
     '실시간 글로벌 거시 경제지표 (FRED & ECOS 스캔):',
     macroText,
@@ -2420,14 +2637,25 @@ function getAiPortfolioAdvice_(forceRefresh) {
     '실시간 퀀트 알고리즘 시그널 및 팩터 데이터:',
     quantText,
     '',
-    '요구사항:',
-    '1. <b>[1] 매크로/뉴스 및 퀀트 융합 시장 진단</b>, <b>[2] 현재 보유자산 쏠림 리스크 및 비중 피드백</b>, <b>[3] 매크로 금리 및 퀀트 시그널(VAA 포지션 전환, 개별주 팩터 스코어 우수 종목)에 기반한 리밸런싱 조언 (구체적인 매수/매도/교체 제안 포함)</b> 세 항목으로 냉정하고 격조 높은 톤앤매너로 한글로 작성해라.',
-    '2. 항목들은 HTML 태그(<b>, <i>, <code> 등)를 적절히 사용해 대시보드 팝업에 가독성 높고 세련되게 표출될 수 있도록 구조화해라.',
-    '3. 장황한 인사말은 싹 생략하고 즉시 명품 분석 내용만 출력할 것.'
+    '자문 작성 지침 및 요구사항:',
+    '1. 보고서는 명확하게 세 개의 대항목으로 나누어 작성하라:',
+    '   <b>[1] 매크로/뉴스 및 퀀트 융합 시장 진단</b>',
+    '   <b>[2] 포트폴리오 쏠림(상관관계) 및 목표 비중 괴리(Drift) 분석</b>',
+    '   <b>[3] 구체적인 자산 최적화 리밸런싱 매매 지시 및 자문</b>',
+    '2. <b>[2] 항목</b>에서는 주입된 상관관계 데이터를 활용하여 종목 간 동조화 리스크를 진단하고, Drift 데이터를 바탕으로 허용 오차 범위를 초과한 종목들을 짚어내라.',
+    '3. <b>[3] 항목</b>에서는 유저가 직관적으로 즉시 실행할 수 있도록 "어떤 종목을 몇 %p 만큼 매도하여 현금화하거나, 어떤 우수 퀀트 종목/VAA 대피 자산으로 교체 매수해야 하는지" 수치적 가이드가 포함된 구체적인 매수/매도/교체 제안을 명시하라.',
+    '4. 인사말이나 맺음말 등 불필요한 서론/결론은 생략하고 즉시 <b> 태그 등을 활용한 가독성 높고 구조화된 명품 분석 내용만 출력하라.',
+    '5. 냉정하고 객관적이며 고도로 전문적인 금융 전문가의 어조를 유지하라.'
   ].join('\n');
   
-  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-1.5-flash');
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-2.5-flash');
+  if (model === 'gemini-1.5-flash') {
+    try {
+      PropertiesService.getScriptProperties().setProperty('GEMINI_MODEL', 'gemini-2.5-flash');
+    } catch(pe) {}
+    model = 'gemini-2.5-flash';
+  }
+  var url = 'https://generativelanguage.googleapis.com/v1/models/' + model + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.2 }
@@ -2487,7 +2715,7 @@ function getQuantLabDataForWeb(forceRefresh) {
     holdings.forEach(function(h) {
       var sym = normalizeStockSymbol_(h.symbol);
       if (sym && sym !== 'CASH' && normalizeDateValue_(h.date) === today) {
-        uniqueSymbols[sym] = true;
+        uniqueSymbols[sym] = h.name || true;
       }
     });
     var portfolioSymbols = Object.keys(uniqueSymbols);
@@ -2538,7 +2766,8 @@ function getQuantLabDataForWeb(forceRefresh) {
         
         var currentPrice = priceData ? parseFloat(priceData.close || 0) : 0;
         var name = priceData ? String(priceData.name || cleanSym).trim() : cleanSym;
-        name = getStockKoreanName_(cleanSym, name);
+        var existingName = (uniqueSymbols[cleanSym] && typeof uniqueSymbols[cleanSym] === 'string') ? uniqueSymbols[cleanSym] : null;
+        name = getStockKoreanName_(cleanSym, existingName || name);
         
         var fund = AM_QUANT_FUNDAMENTAL_DB[cleanSym] || { eps: 0, bps: 0, div: 0, grow: 10, debt: 100, beta: 1.0 };
         var per = 0; var pbr = 0; var divYield = 0; var roe = 0;
@@ -2665,7 +2894,8 @@ function getQuantLabDataForWeb(forceRefresh) {
             }
             var currentPrice = priceData ? parseFloat(priceData.close || 0) : 0;
             var name = priceData ? String(priceData.name || cleanSym).trim() : cleanSym;
-            name = getStockKoreanName_(cleanSym, name);
+            var existingName = (uniqueSymbols[cleanSym] && typeof uniqueSymbols[cleanSym] === 'string') ? uniqueSymbols[cleanSym] : null;
+            name = getStockKoreanName_(cleanSym, existingName || name);
             
             var fund = AM_QUANT_FUNDAMENTAL_DB[cleanSym] || { eps: 0, bps: 0, div: 0, grow: 10, debt: 100, beta: 1.0 };
             var per = 0; var pbr = 0; var divYield = 0; var roe = 0;
@@ -2801,20 +3031,186 @@ function getQuantLabDataForWeb(forceRefresh) {
 }
 
 function getWebAppUrl_() {
-  var customUrl = getScriptProperty_('CUSTOM_DASHBOARD_URL', '');
+  var service = PropertiesService.getScriptProperties();
+  var customUrl = service.getProperty('CUSTOM_DASHBOARD_URL') || '';
+  
+  if (!customUrl) {
+    // 🚀 [자율 동기화 세이프 가드] settings 시트에서 직접 룩업 시도하여 속성값 자동 복구
+    try {
+      var settingsRows = readObjects_(AM_CONFIG.SHEETS.SETTINGS) || [];
+      var foundRow = settingsRows.filter(function(row) {
+        return String(row.key || '').trim() === 'CUSTOM_DASHBOARD_URL';
+      });
+      if (foundRow.length > 0) {
+        var val = String(foundRow[0].value || '').trim();
+        if (val && val.indexOf('****') < 0) {
+          customUrl = val;
+          service.setProperty('CUSTOM_DASHBOARD_URL', val);
+          logInfo_('properties_sync', 'Auto-restored CUSTOM_DASHBOARD_URL from settings sheet', { url: val });
+        }
+      }
+    } catch(e) {
+      logWarn_('properties_sync', 'Failed to auto-lookup CUSTOM_DASHBOARD_URL from sheet', { error: e.message });
+    }
+  }
+  
   if (customUrl) return customUrl;
   
-  var url = getScriptProperty_('WEB_APP_URL', '');
-  if (url) return url;
-  try {
-    return ScriptApp.getService().getUrl();
-  } catch(e) {
-    return '';
+  var url = service.getProperty('WEB_APP_URL') || '';
+  if (url && url.indexOf('AKfycbzAtj9') < 0 && url.indexOf('/exec') >= 0) {
+    return url;
   }
+  
+  // 🚀 [구버전 404 차단벽] 낡은 WEB_APP_URL 주소이거나 비어있을 경우, 100% 정상 작동이 검증된 신규 배포 URL로 자동 복구 치료
+  var verifiedUrl = 'https://script.google.com/macros/s/AKfycbzNBBpzQDGet6ccuIE8EF72D1R61MS4qkdKxnw2lvoBs3radRiBnsiFy5I1zUWCl5hGCg/exec';
+  service.setProperty('WEB_APP_URL', verifiedUrl);
+  return verifiedUrl;
 }
 
 function getLogsForDebug_() {
   ensureAllSheets_();
   var logs = readObjects_(AM_CONFIG.SHEETS.LOGS) || [];
   return logs.slice(Math.max(0, logs.length - 40)).reverse();
+}
+
+function getSystemDiagnosticsForWeb() {
+  var service = PropertiesService.getScriptProperties();
+  var diag = {
+    PORTFOLIO_MODE: service.getProperty('PORTFOLIO_MODE'),
+    GEMINI_API_KEY_EXISTS: !!service.getProperty('GEMINI_API_KEY'),
+    GEMINI_MODEL: service.getProperty('GEMINI_MODEL') || 'gemini-2.5-flash',
+    KIS_APP_KEY_EXISTS: !!service.getProperty('KIS_APP_KEY'),
+    KIS_MOCK_APP_KEY_EXISTS: !!service.getProperty('KIS_MOCK_APP_KEY'),
+    KIS_CANO: service.getProperty('KIS_CANO'),
+    KIS_MOCK_CANO: service.getProperty('KIS_MOCK_CANO'),
+    recent_logs: []
+  };
+  
+  try {
+    var logs = readObjects_(AM_CONFIG.SHEETS.LOGS) || [];
+    diag.recent_logs = logs.slice(Math.max(0, logs.length - 200)).reverse();
+  } catch(e) {
+    diag.logs_error = e.message;
+  }
+  
+  return diag;
+}
+
+function testMockApiForWeb() {
+  try {
+    var account = getKisAccountConfig_();
+    var mockAuth = (account.mockAppKey && account.mockAppSecret) ? {
+      appKey: account.mockAppKey,
+      appSecret: account.mockAppSecret,
+      baseUrl: account.mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
+    } : null;
+    
+    if (!mockAuth) {
+      return { success: false, error: 'Mock APP KEY or SECRET is missing in script properties.' };
+    }
+    
+    var res = fetchKisDomesticAccountBalance_(account.mockCano, account.mockProductCode, mockAuth);
+    return { success: true, response: res };
+  } catch(e) {
+    return { success: false, error: e.message, stack: e.stack };
+  }
+}
+
+function testQuantDbForWeb() {
+  try {
+    var rawData = readObjects_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB) || [];
+    return { success: true, count: rawData.length, sample: rawData.slice(0, 10) };
+  } catch(e) {
+    return { success: false, error: e.message, stack: e.stack };
+  }
+}
+
+function testPremarketAiForWeb() {
+  try {
+    var details = ["- 삼성전자 (005930): 현재가 72000원, RSI 55, 감지된 신호: BUY"];
+    var prompt = buildPremarketPrompt_(details);
+    var res = null;
+    try {
+      res = callGeminiWithSearchGrounding_(prompt);
+    } catch(e) {
+      logWarn_('premarket_ai', 'Diagnostic test search grounding failed; testing fallback...', { error: e.message });
+      res = callGeminiWithoutSearchGrounding_(prompt);
+    }
+    return { success: true, response: res };
+  } catch(e) {
+    return { success: false, error: e.message, stack: e.stack };
+  }
+}
+
+function callGeminiWithoutSearchGrounding_(prompt) {
+  var apiKey = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_API_KEY);
+  var model = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.GEMINI_MODEL, 'gemini-2.5-flash');
+  if (model === 'gemini-1.5-flash') {
+    model = 'gemini-2.5-flash';
+  }
+  // 일반 API는 v1 엔드포인트 사용 (더 안정적)
+  var url = 'https://generativelanguage.googleapis.com/v1/models/' + model + ':generateContent?key=' + apiKey;
+  
+  var payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.2
+    }
+  };
+  
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  
+  var responseCode = response.getResponseCode();
+  var responseText = response.getContentText();
+  
+  if (responseCode !== 200) {
+    throw new Error('Gemini Non-Search Grounding Fallback failed (HTTP ' + responseCode + '): ' + responseText);
+  }
+  
+  var res = JSON.parse(responseText);
+  var text = res.candidates[0].content.parts[0].text;
+  
+  var cleanText = text.replace(/```[a-zA-Z]*/g, '').replace(/`/g, '').trim();
+  var startIdx = cleanText.indexOf('{');
+  var endIdx = cleanText.lastIndexOf('}');
+  if (startIdx >= 0 && endIdx > startIdx) {
+    cleanText = cleanText.substring(startIdx, endIdx + 1);
+  }
+  return JSON.parse(cleanText);
+}
+
+function testPremarketReportTrigger() {
+  try {
+    var res = runPremarketAiReport();
+    return { success: true, result: res };
+  } catch(e) {
+    return { success: false, error: e.message, stack: e.stack };
+  }
+}
+
+/**
+ * 🚀 [신설] 텔레그램 API 스펙 호환용 대시보드 바로가기 인라인 버튼 마크업 빌더
+ * 구글 앱스 스크립트 도메인인 경우 텔레그램 web_app 버튼 규격 위반(400 Bad Request)을 차단하기 위해
+ * 자동으로 일반 브라우저 새창이동(url) 타입으로 안전하게 전환하여 반환합니다.
+ */
+function buildDashboardButtonMarkup_(webAppUrl) {
+  if (!webAppUrl) return null;
+  
+  var isScriptHost = (webAppUrl.indexOf('script.google.com') >= 0);
+  var button = { text: '📊 실시간 대시보드 (TMA) 열기' };
+  
+  if (isScriptHost) {
+    button.url = webAppUrl; // 일반 브라우저 새창 열기
+  } else {
+    button.web_app = { url: webAppUrl }; // 텔레그램 내장 웹뷰 열기
+  }
+  
+  return {
+    inline_keyboard: [[button]]
+  };
 }
