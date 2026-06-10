@@ -111,4 +111,26 @@
 
 ---
 
+## 🌐 제 11조: [이원화 호스팅 및 클라우드 캐시 우회 수칙] Dual-Hosting Sync & Cache-Busting
+1. **GitHub Pages & Apps Script 이원화 동기화 의무**:
+   - 대시보드 화면(HTML/CSS/JS)은 GitHub Pages에서 정적으로 서빙되고 백엔드는 Apps Script Web App API로 굴러가는 이원화 구조를 완벽하게 인지한다.
+   - 화면 레이아웃, CSS 스타일, 혹은 프론트엔드 JS 연동 로직을 수정한 경우, `clasp deploy`를 통한 Apps Script 배포뿐만 아니라 **반드시 GitHub 원격 저장소(`main` 브랜치)로 즉각 `git push`를 실행**하여 GitHub Pages 웹사이트가 0초 만에 실시간 빌드되어 동시 갱신되도록 배포 생태계를 엄격히 일치시킨다.
+2. **구글 CDN 캐시 고착화 파괴 (Cache-Busting Deployment)**:
+   - clasp deploy로 기존 배포 ID에 버전을 덮어쓸 때, 구글의 프록시 CDN 캐싱 및 익명 권한 지연으로 인해 실서버가 낡은 HTML/JS를 계속 서빙하는 지연이 관측될 경우, 이를 억지로 기다리지 않는다.
+   - 지체 없이 **신규 배포 ID(New Deployment ID)를 생성하여 구글 캐시를 완전히 깨뜨리고**, 새 배포 ID를 `run_test_and_deploy.js`, `index.html` 의 `API_URL`, 그리고 `04_TelegramBot.js` 의 `WEB_APP_URL` 및 `verifiedUrl` 등 3대 연동 경로에 일제히 갱신 적용하여 배포 즉시 100% 최신 패치 코드가 실시간 동작하도록 강제 조치한다.
+
+---
+
+## ⚡ 제 12조: [초고속 모드 전환 및 대시보드 링크 영구 고정] Instant Swapping & Default Fallback
+1. **초고속 모드 스위칭 (Instant Mode Swapping UX)**:
+   - 모의투자 <-> 실전투자 모드 토글 전환 시, 무거운 KIS API 실시간 동기화(`collectHoldingsCurrent`)를 동기식으로 무한 대기하게 만들면 5~8초 렉 및 타임아웃이 발생한다.
+   - 백엔드는 모드 변경 시 오늘 조회했던 해당 모드의 데이터 스냅샷이 시트에 이미 존재한다면, KIS API 스캔 대기 시간을 전면 생략하고 **0.2초 만에 캐시 데이터로 즉시 응답**한다.
+   - 프론트엔드도 모드 변경 성공 시 1.2초 딜레이 대신 **300ms의 최소 대기 후 캐시 기반 고속 갱신(`fetchPortfolioData(false)`)을 즉각 수행**하여 스위치를 클릭하자마자 0.5초 이내에 모드 전환 렌더링이 완료되도록 튜닝한다. KIS API 강제 실시간 조율은 사용자가 수동 새로고침 버튼(`fetchPortfolioData(true)`)을 직접 터치할 때만 한정 가동한다.
+2. **대시보드 깃허브 링크 영구 고정 (TMA GitHub Fallback)**:
+   - 텔레그램 봇방에서 대시보드 바로가기 링크를 발송할 때, 구글 웹앱 주소로 폴백이 일어나면 권한 오버헤드와 브라우저 경고 배너가 발생하므로 대시보드의 실질적 진입 장벽이 높아진다.
+   - 대시보드 URL 반환 함수(`getWebAppUrl_`)는 설정에 별도 `CUSTOM_DASHBOARD_URL`이 기입되어 있지 않거나 동기화가 풀려 있더라도, 기본 구글 웹앱 주소로 폴백하는 대신 **무조건 사용자의 GitHub Pages URL (`https://taewoonghwang.github.io/jusik/`)로 안전 강제 폴백**되도록 설계하여 챗봇을 통한 대시보드 기동 시 항상 쾌적한 깃허브 환경을 보장한다.
+
+---
+
 본 수칙은 Antigravity AI 어시스턴트의 **영혼과도 같은 자율 헌장**입니다. 앞으로 사용자님과 함께 코딩하는 모든 여정에서 이 규칙을 수호하고 실행할 것을 엄숙히 약속합니다.
+

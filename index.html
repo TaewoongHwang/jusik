@@ -2633,10 +2633,10 @@
         google.script.run
           .withSuccessHandler(() => {
             showHUD('success', '변경 완료', '운용 투자 모드가 성공적으로 변경되었습니다!');
-            // 🚀 [강제 실시간 동기화 호출] 백엔드 모드가 변경되었으므로, forceRefresh = true 로 데이터를 즉시 갱신
+            // 🚀 [초고속 UI 전환 튜닝] KIS API 딜레이를 유발하지 않고 300ms 만에 캐시 데이터로 대시보드 내용 즉시 갱신 전환
             setTimeout(() => {
-              fetchPortfolioData(true);
-            }, 1200);
+              fetchPortfolioData(false);
+            }, 300);
           })
           .withFailureHandler((err) => {
             // 🚀 [롤백 메커니즘 기동] API 실패 시 UI 스위치 상태 원복

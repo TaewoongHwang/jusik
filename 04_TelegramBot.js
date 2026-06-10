@@ -1318,7 +1318,8 @@ function doGet(e) {
 }
 
 function getPortfolioDataForWeb(forceRefresh) {
-  ensureAllSheets_();
+  // 🚀 [속도 최적화] API 호출마다 시트 전체 검사하는 불필요 오버헤드 제거
+  // ensureAllSheets_();
   var currentMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
   
   // 🚀 [신설] 모드 변경 감지를 통한 캐시 강제 무효화 안전장치
@@ -1330,7 +1331,8 @@ function getPortfolioDataForWeb(forceRefresh) {
     service.setProperty(lastModeKey, currentMode);
   }
   
-  // 🚀 [초고속 0.2초 로딩 튜닝] forceRefresh 가 참이거나 모드가 변경되었거나 오늘자 적재 데이터가 아예 없을 때만 KIS API 강제 기동
+  // 🚀 [초고속 0.2초 로딩 튜닝] forceRefresh 가 참이거나 오늘자 적재 데이터가 아예 없을 때만 KIS API 강제 기동
+  // 모드 변경(isModeChanged) 시에도 캐시(existingTodayHoldings)가 시트에 존재하면 KIS API 대기 없이 캐시 즉시 0.2초 반환
   var today = amTodayString_();
   var existingTodayHoldings = [];
   try {
@@ -1340,11 +1342,11 @@ function getPortfolioDataForWeb(forceRefresh) {
     existingTodayHoldings = filterHoldingsByMode_(allToday, currentMode);
   } catch(e) {}
   
-  if (forceRefresh === true || forceRefresh === 'true' || isModeChanged || existingTodayHoldings.length === 0) {
-    logInfo_('portfolio_api', 'Forcing real-time holdings collection (Cache invalidation)', { force: forceRefresh, modeChanged: isModeChanged });
+  if (forceRefresh === true || forceRefresh === 'true' || existingTodayHoldings.length === 0) {
+    logInfo_('portfolio_api', 'Forcing real-time holdings collection (Cache invalidation)', { force: forceRefresh });
     collectHoldingsCurrent();
   } else {
-    logInfo_('portfolio_api', 'Using cached sheet portfolio holdings snapshot for speed', { holdings_count: existingTodayHoldings.length });
+    logInfo_('portfolio_api', 'Using cached sheet portfolio holdings snapshot for speed', { holdings_count: existingTodayHoldings.length, modeChanged: isModeChanged });
   }
   
   var holdings = filterHoldingsByMode_(readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT), currentMode).filter(function(row) {
