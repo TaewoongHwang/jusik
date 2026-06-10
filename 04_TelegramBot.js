@@ -3056,15 +3056,8 @@ function getWebAppUrl_() {
   
   if (customUrl) return customUrl;
   
-  var url = service.getProperty('WEB_APP_URL') || '';
-  if (url && url.indexOf('AKfycbzAtj9') < 0 && url.indexOf('/exec') >= 0) {
-    return url;
-  }
-  
-  // 🚀 [구버전 404 차단벽] 낡은 WEB_APP_URL 주소이거나 비어있을 경우, 100% 정상 작동이 검증된 신규 배포 URL로 자동 복구 치료
-  var verifiedUrl = 'https://script.google.com/macros/s/AKfycbzNBBpzQDGet6ccuIE8EF72D1R61MS4qkdKxnw2lvoBs3radRiBnsiFy5I1zUWCl5hGCg/exec';
-  service.setProperty('WEB_APP_URL', verifiedUrl);
-  return verifiedUrl;
+  // 🚀 [패치] CUSTOM_DASHBOARD_URL이 비어 있을 경우 기본적으로 GitHub Pages 대시보드 주소로 무조건 안전 폴백
+  return 'https://taewoonghwang.github.io/jusik/';
 }
 
 function getLogsForDebug_() {
