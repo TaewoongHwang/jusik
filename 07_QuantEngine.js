@@ -745,7 +745,7 @@ function runMonthlyQuantRebalancing() {
     // 🚀 [가상 매매 퀀트 자동 체결 동기화]
     var paperLogStr = '';
     try {
-      var paperRes = runPaperPortfolioQuantRebalancing_(vaa.recommended_symbol);
+      var paperRes = runPaperPortfolioQuantRebalancing_(vaa.recommended_symbol, 'mock');
       if (paperRes.success) {
         paperLogStr = '\n\n🤖 <b>[가상 매매 자동 체결 완료]</b>\n';
         if (paperRes.logs && paperRes.logs.length > 0) {
@@ -763,11 +763,11 @@ function runMonthlyQuantRebalancing() {
     try {
       var domScoring = getQuantStockScoring(DOMESTIC_MARKET_UNIVERSE);
       var domTop3 = domScoring.slice(0, 3).map(function(s) { return s.symbol; });
-      runQuantPortfolioRebalancing_('DOM', domTop3);
+      runQuantPortfolioRebalancing_('DOM', domTop3, 'mock');
       
       var usScoring = getQuantStockScoring(US_MARKET_UNIVERSE);
       var usTop3 = usScoring.slice(0, 3).map(function(s) { return s.symbol; });
-      runQuantPortfolioRebalancing_('US', usTop3);
+      runQuantPortfolioRebalancing_('US', usTop3, 'mock');
       
       paperLogStr += '\n\n📈 <b>[퀀트 모의투자 계좌 자동 리밸런싱 완료]</b>\n';
       paperLogStr += '  • 국내 300만 퀀트 포트폴리오 편입: ' + domTop3.join(', ') + '\n';

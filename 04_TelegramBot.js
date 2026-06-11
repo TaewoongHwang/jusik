@@ -2227,7 +2227,7 @@ function runDailyClosePaperTradingReport() {
   
   var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
   
-  if (portMode === 'MOCK') {
+  if (true || portMode === 'MOCK') {
     var seedMoney = parseFloat(getScriptProperty_('KIS_MOCK_SEED_MONEY', '10000000'));
     if (isNaN(seedMoney) || seedMoney <= 0) {
       seedMoney = 10000000;

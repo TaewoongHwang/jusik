@@ -1160,164 +1160,27 @@ function executeMockOrder_(symbol, actionType, qty, customPrice) {
   };
 }
 
-/**
- * 🚀 [신설] KIS 실제 계좌 실거래 주문 송신 엔진 (안전 가드 내장)
- */
-function executeRealOrder_(symbol, actionType, qty, customPrice) {
-  // 🚀 [안전 가드] 실거래 자동 매매 스위치 검증
-  var isAutoTradingEnabled = String(getScriptProperty_('REAL_AUTO_TRADING_ENABLED', 'N')).trim().toUpperCase();
-  if (isAutoTradingEnabled !== 'Y' && isAutoTradingEnabled !== 'TRUE') {
-    var guardMsg = '⚠️ [실거래 주문 차단] REAL_AUTO_TRADING_ENABLED 가 활성화되지 않아 실제 주문을 전송하지 않았습니다. 스크립트 속성 값을 Y 또는 TRUE로 활성화해 주세요. (주문 요청: ' + symbol + ' ' + actionType + ' ' + qty + '주)';
-    logWarn_('real_trading', guardMsg);
-    try {
-      sendTelegramMessage(guardMsg);
-    } catch(telErr) {}
-    throw new Error('실거래 자동주문 비활성화 상태입니다. (REAL_AUTO_TRADING_ENABLED=N)');
-  }
-
-  var today = amTodayString_();
-  var cleanSymbol = normalizeStockSymbol_(symbol);
-  var isOverseas = /^[A-Za-z]/.test(cleanSymbol);
-  
-  var account = getKisAccountConfig_();
-  
-  var appKey = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_KEY, ''));
-  var appSecret = sanitizeKey_(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_APP_SECRET, ''));
-  var baseUrl = String(getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_BASE_URL, AM_CONFIG.DEFAULT_KIS_BASE_URL)).trim();
-  
-  if (!appKey || !appSecret) {
-    throw new Error('KIS 실거래 APP KEY 또는 SECRET이 설정되지 않았습니다.');
-  }
-  
-  if (!account.cano) {
-    throw new Error('KIS 실거래 계좌번호(KIS_CANO)가 설정되지 않았습니다.');
-  }
-
-  var realAuth = {
-    appKey: appKey,
-    appSecret: appSecret,
-    baseUrl: baseUrl
-  };
-
-  var quote = null;
-  try {
-    if (isOverseas) {
-      quote = fetchKisOverseasCurrentPrice_(cleanSymbol);
-    } else {
-      quote = fetchKisCurrentPrice_(cleanSymbol);
-    }
-  } catch(e) {
-    logWarn_('real_trading', 'Price fetch failed for real order symbol: ' + cleanSymbol, { error: e.message });
-  }
-  
-  var stockName = getStockKoreanName_(cleanSymbol, quote ? quote.name : cleanSymbol);
-  var executionPrice = customPrice > 0 ? customPrice : (quote ? quote.close : 0);
-  if (executionPrice <= 0) {
-    throw new Error('종목 ' + cleanSymbol + '의 시세를 획득할 수 없어 실거래 주문을 생성할 수 없습니다.');
-  }
-  var amount = executionPrice * qty;
-  var orderNo = 'N/A';
-  
-  if (!isOverseas) {
-    // 🇰🇷 국내 주식 실거래 주문 송신
-    var trId = (actionType === 'BUY') ? 'TTTC0802U' : 'TTTC0801U';
-    var payload = {
-      CANO: account.cano,
-      ACNT_PRDT_CD: account.accountProductCode || '01',
-      PDNO: cleanSymbol,
-      ORD_DVSN: customPrice > 0 ? '00' : '01', // 지정가/시장가
-      ORD_QTY: String(qty),
-      ORD_UNPR: customPrice > 0 ? String(customPrice) : '0'
-    };
-    
-    try {
-      var response = kisPost_('/uapi/domestic-stock/v1/trading/order-cash', payload, trId, realAuth);
-      orderNo = (response.output && response.output.ODNO) || 'N/A';
-    } catch(err) {
-      logWarn_('real_trading', 'Domestic real order failed', { error: err.message });
-      throw new Error('한투 국내 실거래 주문 실패: ' + err.message);
-    }
-  } else {
-    // 🇺🇸 해외 주식 실거래 주문 송신
-    var trId = (actionType === 'BUY') ? 'TTTS3015U' : 'TTTS3020U';
-    var exchangeCode = getOverseasExchangeCode_(cleanSymbol);
-    
-    var payload = {
-      CANO: account.cano,
-      ACNT_PRDT_CD: account.accountProductCode || '01',
-      OVRS_EXCG_CD: exchangeCode,
-      PDNO: cleanSymbol,
-      ORD_QTY: String(qty),
-      ORD_UNPR: String(Number(executionPrice).toFixed(2)),
-      ORD_DVSN: '00',
-      SLL_BUY_DVSN_CD: (actionType === 'BUY') ? '02' : '01'
-    };
-    
-    try {
-      var response = kisPost_('/uapi/overseas-stock/v1/trading/order', payload, trId, realAuth);
-      orderNo = (response.output && response.output.ODNO) || 'N/A';
-    } catch(err) {
-      logWarn_('real_trading', 'Overseas real order failed', { error: err.message });
-      throw new Error('한투 해외 실거래 주문 실패: ' + err.message);
-    }
-  }
-  
-  // REAL_LEDGER 기록
-  appendObjectRow_(AM_CONFIG.SHEETS.REAL_LEDGER, {
-    date: today,
-    symbol: cleanSymbol,
-    name: stockName,
-    action_type: actionType,
-    price: executionPrice,
-    quantity: qty,
-    amount: amount,
-    realized_pl: 0,
-    broker: 'KIS_REAL',
-    created_at: amNowString_()
-  });
-  
-  var successMsg = '⚠️ <b>[한투 실거래 주문 성공]</b> ' + actionType + ' ' + stockName + ' (' + cleanSymbol + ') ' + qty + '주 (주문번호: ' + orderNo + ')';
-  logInfo_('real_trading', successMsg, { symbol: cleanSymbol, action: actionType, qty: qty, order_no: orderNo });
-  
-  try {
-    sendTelegramMessage(successMsg);
-  } catch(e) {}
-  
-  collectHoldingsCurrent();
-  
-  return {
-    success: true,
-    name: stockName,
-    executionPrice: executionPrice,
-    amount: amount,
-    cash: 0,
-    activePositions: []
-  };
-}
-
 function executePaperOrder_(symbol, actionType, qty, customPrice, isAutoRebal) {
   var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
   
   if (portMode === 'mock') {
     return executeMockOrder_(symbol, actionType, qty, customPrice);
-  } else if (portMode === 'real') {
-    return executeRealOrder_(symbol, actionType, qty, customPrice);
   }
   
-  throw new Error('현재 운용 모드가 부적합합니다. (MODE: ' + portMode + ')');
+  throw new Error('현재 운용 모드가 실제계좌(REAL)입니다. 모의 주문을 전송할 수 없습니다. /mode mock 명령어로 먼저 전환하세요.');
 }
 
 /**
  * 🤖 VAA 퀀트 전략 시그널에 따른 가상매매 포트폴리오 자동 리밸런싱 집행 모듈
  */
-function runPaperPortfolioQuantRebalancing_(vaaSignal) {
+function runPaperPortfolioQuantRebalancing_(vaaSignal, forceMode) {
   if (!vaaSignal) {
     return { success: false, reason: '신규 퀀트 시그널이 유효하지 않습니다.' };
   }
   
   logInfo_('paper_rebalancing', 'Start auto rebalancing for signal: ' + vaaSignal);
   
-  var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
+  var portMode = String(forceMode || getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
   var isMockMode = (portMode === 'mock');
   var isRealMode = (portMode === 'real');
   
@@ -1716,7 +1579,7 @@ function executeQuantPaperOrder_(type, symbol, actionType, qty, customPrice) {
 /**
  * 🤖 퀀트 계좌 리밸런싱 실행기 (국내/해외 구분형)
  */
-function runQuantPortfolioRebalancing_(type, targetSymbols) {
+function runQuantPortfolioRebalancing_(type, targetSymbols, forceMode) {
   if (!targetSymbols || targetSymbols.length === 0) {
     logWarn_('quant_rebalancing', 'No target symbols provided for ' + type + ' quant rebalancing.');
     return;
@@ -1724,7 +1587,7 @@ function runQuantPortfolioRebalancing_(type, targetSymbols) {
   
   logInfo_('quant_rebalancing', 'Start quant rebalancing for ' + type + '. Targets: ' + targetSymbols.join(','));
   
-  var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
+  var portMode = String(forceMode || getScriptProperty_('PORTFOLIO_MODE', 'real')).toLowerCase();
   var isMockMode = (portMode === 'mock');
   var isRealMode = (portMode === 'real');
   
