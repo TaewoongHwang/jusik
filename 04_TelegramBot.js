@@ -576,13 +576,20 @@ function doPost(e) {
       }
     }
     else if (command === '/quant' || command === '/퀀트') {
-      sendTelegramMessage('📥 실시간 퀀트 알고리즘 연산을 진행하고 있습니다...');
+      sendTelegramMessage('📥 퀀트 분석 보고서를 불러오고 있습니다...');
       try {
         var vaa = getVaaStrategySignal();
-        var scoring = getQuantStockScoring();
+        
+        // 국내외 100대 기업 유니버스 전체 취합
+        var unionUniverse = [];
+        DOMESTIC_MARKET_UNIVERSE.forEach(function(s) { unionUniverse.push(s); });
+        US_MARKET_UNIVERSE.forEach(function(s) { unionUniverse.push(s); });
+        
+        // 캐시를 타므로 0.1초만에 스코어링 반환
+        var scoring = getQuantStockScoring(unionUniverse);
         
         var msg = [
-          '📊 <b>[JUSIK AI 2.0 실시간 퀀트 분석 보고서]</b> ⚙️',
+          '📊 <b>[JUSIK AI 2.0 퀀트 분석 보고서]</b> ⚙️',
           '----------------------------------------',
           '📆 <b>진단일시:</b> <code>' + vaa.timestamp + '</code>',
           '',
@@ -596,10 +603,9 @@ function doPost(e) {
             vaa.aggressive_scores.map(function(a) { return '  • ' + a.symbol + ': <b>' + a.score + '</b> (1M: ' + a.r1 + '%)'; }).join('\n') :
             vaa.defensive_scores.map(function(a) { return '  • ' + a.symbol + ': <b>' + a.score + '</b> (1M: ' + a.r1 + '%)'; }).join('\n'),
           '',
-          '🔹 <b>포트폴리오 주식 퀀트 팩터 랭킹 (Top 5):</b>',
-          scoring.slice(0, 5).map(function(s, idx) {
-            return '  ' + (idx + 1) + '. <b>' + s.name + ' (' + s.symbol + ')</b> - 스코어: <b>' + s.quant_score + '점</b>\n' +
-                   '     (PER: ' + s.per + ' | PBR: ' + s.pbr + ' | 50D모멘텀: ' + s.momentum_pct + '%)';
+          '🔹 <b>국내외 100대 기업 통합 퀀트 팩터 랭킹 (Top 30):</b>',
+          scoring.slice(0, 30).map(function(s, idx) {
+            return '  ' + (idx + 1) + '. <b>' + s.name + '</b> (' + s.symbol + ') - <b>' + s.quant_score + '점</b> | PER: ' + s.per + ' | PBR: ' + s.pbr + ' | 50D: ' + s.momentum_pct + '%';
           }).join('\n'),
           '----------------------------------------',
           '💡 VAA 전략은 매월 말 1회 리밸런싱을 원칙으로 하며, 모든 공격형 자산의 모멘텀 스코어가 0을 초과해야 공격 국면으로 진입합니다.'

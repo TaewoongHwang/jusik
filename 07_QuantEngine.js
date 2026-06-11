@@ -38,7 +38,37 @@ var AM_QUANT_FUNDAMENTAL_DB = {
   '035250': { eps: 1100, bps: 24000, div: 900, grow: 4, debt: 15, beta: 0.55, gpa: 0.22 },     // 강원랜드
   '009830': { eps: -2000, bps: 52000, div: 0, grow: 15, debt: 180, beta: 1.20, gpa: 0.09 },    // 한화솔루션
   '011170': { eps: -12000, bps: 280000, div: 0, grow: 5, debt: 95, beta: 1.10, gpa: 0.05 },    // 롯데케미칼
-  
+  '000100': { eps: 1500, bps: 38000, div: 400, grow: 15, debt: 30, beta: 0.70, gpa: 0.15 },    // 유한양행
+  '000080': { eps: 1200, bps: 22000, div: 950, grow: 5, debt: 180, beta: 0.60, gpa: 0.12 },    // 하이트진로
+  '036570': { eps: 8000, bps: 145000, div: 3000, grow: -5, debt: 25, beta: 0.90, gpa: 0.25 },  // 엔씨소프트
+  '003490': { eps: 3500, bps: 28000, div: 750, grow: 6, debt: 210, beta: 0.95, gpa: 0.11 },    // 대한항공
+  '033780': { eps: 7500, bps: 68000, div: 5200, grow: 4, debt: 28, beta: 0.35, gpa: 0.16 },    // KT&G
+  '030200': { eps: 4500, bps: 62000, div: 1960, grow: 5, debt: 125, beta: 0.42, gpa: 0.18 },   // KT
+  '001450': { eps: 8000, bps: 75000, div: 2000, grow: 8, debt: 90, beta: 0.55, gpa: 0.03 },    // 현대해상
+  '034020': { eps: 800, bps: 14000, div: 0, grow: 12, debt: 130, beta: 1.25, gpa: 0.09 },     // 두산에너빌리티
+  '004020': { eps: 4000, bps: 138000, div: 1000, grow: -2, debt: 85, beta: 1.10, gpa: 0.07 },   // 현대제철
+  '011780': { eps: 12000, bps: 185000, div: 5400, grow: 4, debt: 40, beta: 1.05, gpa: 0.14 },  // 금호석유
+  '010950': { eps: 8500, bps: 78000, div: 4000, grow: 5, debt: 115, beta: 1.02, gpa: 0.13 },   // S-Oil
+  '009540': { eps: 6000, bps: 85000, div: 0, grow: 20, debt: 150, beta: 1.15, gpa: 0.08 },    // HD한국조선해양
+  '012450': { eps: 14000, bps: 98000, div: 1500, grow: 30, debt: 160, beta: 1.20, gpa: 0.15 }, // 한화에어로스페이스
+  '271560': { eps: 9500, bps: 82000, div: 1250, grow: 10, debt: 35, beta: 0.65, gpa: 0.22 },   // 오리온
+  '090430': { eps: 3500, bps: 78000, div: 900, grow: 8, debt: 25, beta: 0.98, gpa: 0.16 },    // 아모레퍼시픽
+  '009240': { eps: 2000, bps: 45000, div: 1200, grow: 3, debt: 80, beta: 0.85, gpa: 0.14 },    // 한샘
+  '001230': { eps: 1800, bps: 24000, div: 500, grow: 4, debt: 105, beta: 1.12, gpa: 0.10 },    // 동국제강
+  '047810': { eps: 2500, bps: 55000, div: 800, grow: 6, debt: 28, beta: 0.92, gpa: 0.11 },     // 아모레G
+  '096770': { eps: 6500, bps: 195000, div: 0, grow: 5, debt: 165, beta: 1.18, gpa: 0.08 },    // SK이노베이션
+  '086280': { eps: 18000, bps: 180000, div: 6300, grow: 8, debt: 80, beta: 0.80, gpa: 0.12 },  // 현대글로비스
+  '011200': { eps: 3200, bps: 26000, div: 600, grow: -10, debt: 35, beta: 1.15, gpa: 0.18 },   // HMM
+  '010620': { eps: 2000, bps: 62000, div: 0, grow: 15, debt: 95, beta: 1.10, gpa: 0.07 },     // 현대미포조선
+  '307900': { eps: 150, bps: 2500, div: 0, grow: 12, debt: 45, beta: 1.20, gpa: 0.08 },      // 국전약품
+  '137310': { eps: -1200, bps: 18000, div: 0, grow: -20, debt: 20, beta: 0.90, gpa: 0.06 },   // 에스디바이오센서
+  '042700': { eps: 2200, bps: 12000, div: 400, grow: 40, debt: 15, beta: 1.75, gpa: 0.35 },    // 한미반도체
+  '192080': { eps: 3500, bps: 36000, div: 1000, grow: 3, debt: 35, beta: 0.85, gpa: 0.16 },    // 대한제강
+  '259960': { eps: 18500, bps: 115000, div: 0, grow: 12, debt: 15, beta: 0.95, gpa: 0.32 },   // 크래프톤
+  '326030': { eps: -800, bps: 28000, div: 0, grow: 5, debt: 18, beta: 1.15, gpa: 0.05 },    // SK바이오사이언스
+  '302440': { eps: 1200, bps: 16000, div: 0, grow: 25, debt: 75, beta: 1.20, gpa: 0.14 },     // SK바이오팜
+  '352820': { eps: 4800, bps: 75000, div: 0, grow: 15, debt: 65, beta: 1.10, gpa: 0.11 },     // 하이브
+
   // 미국 주요 대형주 (21대 우량주 기준 보강: div, grow, debt, beta, gpa 추가)
   'NVDA': { eps: 2.85, bps: 6.5, div: 0.04, grow: 45, debt: 25, beta: 1.85, gpa: 0.65 },     // 엔비디아
   'GOOG': { eps: 7.2, bps: 35.0, div: 0.80, grow: 16, debt: 12, beta: 1.05, gpa: 0.35 },     // 알파벳 C (구글 C)
@@ -60,12 +90,44 @@ var AM_QUANT_FUNDAMENTAL_DB = {
   'HD': { eps: 15.2, bps: 8.5, div: 9.00, grow: 7, debt: 220, beta: 0.95, gpa: 0.38 },        // 홈디포
   'COST': { eps: 16.0, bps: 55.0, div: 4.60, grow: 10, debt: 35, beta: 0.78, gpa: 0.16 },     // 코스트코
   'ABBV': { eps: 11.2, bps: 8.0, div: 6.20, grow: 6, debt: 350, beta: 0.58, gpa: 0.28 },      // 애브비
-  'AMD': { eps: 3.5, bps: 38.0, div: 0.00, grow: 28, debt: 10, beta: 1.70, gpa: 0.28 }        // AMD
+  'AMD': { eps: 3.5, bps: 38.0, div: 0.00, grow: 28, debt: 10, beta: 1.70, gpa: 0.28 },       // AMD
+  'NFLX': { eps: 18.5, bps: 52.0, div: 0.00, grow: 22, debt: 60, beta: 1.20, gpa: 0.38 },     // 넷플릭스
+  'ADBE': { eps: 17.8, bps: 45.0, div: 0.00, grow: 12, debt: 30, beta: 1.12, gpa: 0.44 },     // 어도비
+  'CRM': { eps: 9.8, bps: 62.0, div: 1.60, grow: 15, debt: 25, beta: 1.10, gpa: 0.30 },      // 세일즈포스
+  'CSCO': { eps: 3.8, bps: 11.5, div: 1.60, grow: 5, debt: 50, beta: 0.80, gpa: 0.35 },       // 시스코
+  'INTC': { eps: 0.8, bps: 25.0, div: 0.50, grow: 12, debt: 45, beta: 1.15, gpa: 0.12 },      // 인텔
+  'QCOM': { eps: 10.2, bps: 22.0, div: 3.40, grow: 10, debt: 70, beta: 1.20, gpa: 0.41 },     // 퀄컴
+  'TXN': { eps: 7.2, bps: 18.5, div: 5.20, grow: 8, debt: 55, beta: 0.95, gpa: 0.36 },       // 텍사스인스트루먼트
+  'ORCL': { eps: 5.8, bps: 8.2, div: 1.60, grow: 12, debt: 340, beta: 1.00, gpa: 0.32 },      // 오라클
+  'NKE': { eps: 3.85, bps: 9.2, div: 1.48, grow: 9, debt: 65, beta: 1.05, gpa: 0.35 },       // 나이키
+  'KO': { eps: 2.85, bps: 6.2, div: 1.92, grow: 5, debt: 110, beta: 0.50, gpa: 0.28 },        // 코카콜라
+  'PEP': { eps: 8.2, bps: 15.5, div: 5.06, grow: 6, debt: 180, beta: 0.55, gpa: 0.27 },       // 펩시
+  'DIS': { eps: 4.8, bps: 58.0, div: 0.90, grow: 10, debt: 48, beta: 1.10, gpa: 0.14 },       // 디즈니
+  'WMT': { eps: 2.4, bps: 10.5, div: 0.84, grow: 7, debt: 65, beta: 0.50, gpa: 0.22 },        // 월마트
+  'BAC': { eps: 3.2, bps: 34.5, div: 0.96, grow: 5, debt: 120, beta: 1.15, gpa: 0.03 },       // 뱅크오브아메리카
+  'MRK': { eps: 6.8, bps: 28.0, div: 3.08, grow: 6, debt: 75, beta: 0.40, gpa: 0.22 },        // 머크
+  'PFE': { eps: 2.2, bps: 16.5, div: 1.68, grow: -5, debt: 85, beta: 0.65, gpa: 0.16 },       // 화이자
+  'MCD': { eps: 11.8, bps: -12.0, div: 6.68, grow: 6, debt: 450, beta: 0.68, gpa: 0.40 },     // 맥도날드
+  'NVO': { eps: 2.7, bps: 4.8, div: 0.95, grow: 25, debt: 15, beta: 0.75, gpa: 0.42 },        // 노보노디스크
+  'ASML': { eps: 22.5, bps: 48.0, div: 6.80, grow: 18, debt: 25, beta: 1.25, gpa: 0.38 },      // ASML
+  'GOOGL': { eps: 7.2, bps: 35.0, div: 0.80, grow: 16, debt: 12, beta: 1.05, gpa: 0.35 }      // 알파벳 A (구글 A)
 };
 
-// 💡 퀀트 스크리닝용 국가별 타겟 유니버스 선언
-var DOMESTIC_MARKET_UNIVERSE = ['005930', '000660', '005380', '000270', '068270', '373220', '207940', '105560', '055550', '035420', '035720', '051910', '005490', '028260', '012330', '000810', '015760', '032830', '086790', '017670', '003550', '034730', '009150', '010130', '018260', '000720', '003670', '035250', '009830', '011170'];
-var US_MARKET_UNIVERSE = ['NVDA', 'GOOG', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'META', 'TSLA', 'AVGO', 'LLY', 'UNH', 'JPM', 'V', 'MA', 'PG', 'XOM', 'JNJ', 'HD', 'COST', 'ABBV', 'AMD'];
+// 💡 퀀트 스크리닝용 국가별 타겟 유니버스 선언 (국내 60종 + 미국 40종 = 총 100종)
+var DOMESTIC_MARKET_UNIVERSE = [
+  '005930', '000660', '005380', '000270', '068270', '373220', '207940', '105560', '055550', '035420',
+  '035720', '051910', '005490', '028260', '012330', '000810', '015760', '032830', '086790', '017670',
+  '003550', '034730', '009150', '010130', '018260', '000720', '003670', '035250', '009830', '011170',
+  '000100', '000080', '036570', '003490', '033780', '030200', '001450', '034020', '004020', '011780',
+  '010950', '009540', '012450', '271560', '090430', '009240', '001230', '047810', '096770', '086280',
+  '011200', '010620', '307900', '137310', '042700', '192080', '259960', '326030', '302440', '352820'
+];
+var US_MARKET_UNIVERSE = [
+  'NVDA', 'GOOG', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'META', 'TSLA', 'AVGO', 'LLY',
+  'UNH', 'JPM', 'V', 'MA', 'PG', 'XOM', 'JNJ', 'HD', 'COST', 'ABBV',
+  'AMD', 'NFLX', 'ADBE', 'CRM', 'CSCO', 'INTC', 'QCOM', 'TXN', 'ORCL', 'NKE',
+  'KO', 'PEP', 'DIS', 'WMT', 'BAC', 'MRK', 'PFE', 'MCD', 'NVO', 'ASML'
+];
 
 /**
  * 야후 파이낸스 과거 월봉 차트 API를 통한 수정 종가(Adjusted Close) 수집
@@ -505,7 +567,7 @@ function calculate50DayMomentum_(symbol) {
 /**
  * 🚀 개별 종목군 퀀트 팩터(모멘텀 + 밸류) 멀티 스코어링 시스템 (주가 역산형 어댑터 탑재)
  */
-function getQuantStockScoring(symbolsList) {
+function getQuantStockScoring(symbolsList, forceRealtime) {
   var symbols = symbolsList || [];
   
   var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
@@ -528,11 +590,86 @@ function getQuantStockScoring(symbolsList) {
     // 디폴트는 보유 종목 탐지 실패 시 국내 TOP 15 대형주 유니버스로 대입
     symbols = DOMESTIC_MARKET_UNIVERSE;
   }
+
+  // 🚀 캐싱 레이어 룩업 기동 (forceRealtime !== true 인 경우 시트 캐시 조회)
+  var useCache = false;
+  var cachedDataMap = {};
+  if (forceRealtime !== true) {
+    try {
+      var cachedRows = readObjects_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB) || [];
+      if (cachedRows.length > 0) {
+        useCache = true;
+        cachedRows.forEach(function(row) {
+          var sym = normalizeStockSymbol_(row.symbol);
+          if (sym) {
+            cachedDataMap[sym] = row;
+          }
+        });
+        logInfo_('quant_scoring', 'Loaded quant scores from DB cache for symbols count: ' + cachedRows.length);
+      }
+    } catch(e) {
+      logWarn_('quant_scoring', 'Failed to read quant_universe_db cache, falling back to realtime', { error: e.message });
+    }
+  }
   
   var scoredStocks = symbols.map(function(sym) {
     var cleanSym = normalizeStockSymbol_(sym);
     var isDom = /^[0-9][A-Z0-9]{5}$/i.test(cleanSym);
     
+    // 캐시 사용 가능한 경우 즉각 매핑하여 0.1초 반환
+    if (useCache && cachedDataMap[cleanSym]) {
+      var cached = cachedDataMap[cleanSym];
+      var name = getStockKoreanName_(cleanSym, cached.name || cleanSym);
+      var isEtf = isEtf_(cleanSym, name);
+      
+      var perVal = (cached.per === 'N/A' || isNaN(parseFloat(cached.per))) ? 9999 : parseFloat(cached.per);
+      var pbrVal = (cached.pbr === 'N/A' || isNaN(parseFloat(cached.pbr))) ? 9999 : parseFloat(cached.pbr);
+      var gpaVal = (cached.gpa === 'N/A' || isNaN(parseFloat(cached.gpa))) ? -9999 : parseFloat(cached.gpa);
+      var roeVal = (cached.roe === 'N/A' || isNaN(parseFloat(cached.roe))) ? -9999 : parseFloat(cached.roe);
+      var debtVal = (cached.debt === 'N/A' || isNaN(parseFloat(cached.debt))) ? 9999 : parseFloat(cached.debt);
+      var divYieldVal = (cached.div_yield === 'N/A' || isNaN(parseFloat(cached.div_yield))) ? -9999 : parseFloat(cached.div_yield);
+      var betaVal = (cached.beta === 'N/A' || isNaN(parseFloat(cached.beta))) ? 9999 : parseFloat(cached.beta);
+      var pegVal = (cached.peg === 'N/A' || isNaN(parseFloat(cached.peg))) ? 9999 : parseFloat(cached.peg);
+      
+      var momVal = 0;
+      if (cached.momentum_val !== undefined && cached.momentum_val !== null && !isNaN(parseFloat(cached.momentum_val))) {
+        momVal = parseFloat(cached.momentum_val);
+      } else {
+        momVal = parseFloat(cached.momentum_pct || 0); // 구버전 캐시 대응
+      }
+      
+      return {
+        symbol: cleanSym,
+        name: name,
+        price: parseFloat(cached.price || 0),
+        per: cached.per,
+        pbr: cached.pbr,
+        gpa: cached.gpa,
+        momentum_pct: roundNumber_(parseFloat(cached.momentum_pct || 0), 2),
+        rsi: parseFloat(cached.rsi || 50),
+        srim_price: isEtf ? 'N/A' : (cached.srim_price === 'N/A' || isNaN(cached.srim_price) ? 0 : Math.round(parseFloat(cached.srim_price))),
+        safety_margin: isEtf ? 'N/A' : (cached.safety_margin === 'N/A' || isNaN(cached.safety_margin) ? 0 : parseFloat(cached.safety_margin)),
+        is_etf: isEtf,
+        
+        roe: cached.roe,
+        debt: cached.debt,
+        div_yield: cached.div_yield,
+        beta: cached.beta,
+        peg: cached.peg,
+        
+        per_val: perVal,
+        pbr_val: pbrVal,
+        gpa_val: gpaVal,
+        momentum_val: momVal,
+        roe_val: roeVal,
+        debt_val: debtVal,
+        div_yield_val: divYieldVal,
+        beta_val: betaVal,
+        peg_val: pegVal
+      };
+    }
+    
+    // 실시간 API 데이터 수집 (캐시가 없거나 forceRealtime === true 인 경우)
     var priceData = null;
     if (isDom) {
       try {
@@ -827,8 +964,8 @@ function updateQuantUniverseDatabase() {
   for (var i = 0; i < totalUniverse.length; i++) {
     var symbol = totalUniverse[i];
     try {
-      // API 과부하 분산을 위해 개별 스코어링 순차 수행
-      var singleScoredList = getQuantStockScoring([symbol]);
+      // API 과부하 분산을 위해 개별 스코어링 순차 수행 (forceRealtime = true)
+      var singleScoredList = getQuantStockScoring([symbol], true);
       if (singleScoredList && singleScoredList.length > 0) {
         var s = singleScoredList[0];
         
@@ -841,6 +978,7 @@ function updateQuantUniverseDatabase() {
           pbr: s.pbr,
           gpa: s.gpa,
           momentum_pct: s.momentum_pct,
+          momentum_val: s.momentum_val, // 가중 모멘텀 수치 추가 적재
           rsi: s.rsi,
           roe: s.roe,
           debt: s.debt,
