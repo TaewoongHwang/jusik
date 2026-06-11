@@ -1308,7 +1308,8 @@
       </div>
       <!-- Mode & Currency Switches -->
       <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding: 12px; background: rgba(30, 41, 59, 0.3); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
-        <div class="mode-switch-wrapper" style="margin-top: 0; padding: 0; justify-content: space-between; border-bottom: none;">
+        <!-- 🚀 [패치] 모의투자 기능 잠정 중단에 따른 실제/모의 설정 토글 UI 숨김 처리 -->
+        <div class="mode-switch-wrapper" style="display: none; margin-top: 0; padding: 0; justify-content: space-between; border-bottom: none;">
           <span class="mode-switch-text" style="font-size: 0.75rem; font-weight: bold; color: var(--text-primary);"><i class="fa-solid fa-sliders" style="color: var(--accent-blue);"></i> 실제/모의 운용 모드 설정</span>
           <label class="switch">
             <input type="checkbox" id="modeToggle" onchange="handleModeToggle(this)">

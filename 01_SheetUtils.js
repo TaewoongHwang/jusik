@@ -387,6 +387,10 @@ function safeUiAlert_(message) {
 }
 
 function getScriptProperty_(key, defaultValue) {
+  // 🚀 [패치] 모의투자 기능 잠정 중단 룰에 따른 REAL 강제 고정
+  if (key === 'PORTFOLIO_MODE') {
+    return 'REAL';
+  }
   try {
     // 💡 [3대 도미노 보안 수색 장치] 구글 에디터 50개 제한 버그를 완치하기 위해,
     // 스크립트 속성(Script) -> 사용자 속성(User) -> 문서 속성(Document)을 순차적으로 1:1 다이렉트 자동 룩업합니다!
@@ -414,6 +418,10 @@ function getRequiredScriptProperty_(key) {
 }
 
 function setScriptProperty_(key, value) {
+  // 🚀 [패치] 모의투자 기능 잠정 중단 룰에 따른 REAL 강제 고정
+  if (key === 'PORTFOLIO_MODE') {
+    value = 'REAL';
+  }
   try {
     PropertiesService.getScriptProperties().setProperty(key, String(value));
   } catch(e) {}

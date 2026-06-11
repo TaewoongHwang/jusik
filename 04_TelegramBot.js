@@ -270,25 +270,8 @@ function doPost(e) {
       }
     }
     else if (command === '/mode') {
-      var arg = text.split(' ')[1];
-      if (!arg) {
-        // 인자가 없을 경우 현재 모드를 토글! (REAL <-> MOCK)
-        var currentMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toUpperCase();
-        var nextMode = (currentMode === 'REAL') ? 'MOCK' : 'REAL';
-        
-        setScriptProperty_('PORTFOLIO_MODE', nextMode);
-        updateSettingValueInSheet_('PORTFOLIO_MODE', nextMode);
-        sendTelegramMessage('🔄 <b>[운용 모드 전환]</b>\n\n포트폴리오 주식 운용 모드가 <b>' + nextMode + '</b>(으)로 즉각 토글 변경되었습니다.');
-        collectHoldingsCurrent();
-      } else if (arg.toLowerCase() !== 'real' && arg.toLowerCase() !== 'mock') {
-        sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n👉 <b>올바른 형식:</b>\n<code>/mode real</code> 또는 <code>/mode mock</code>');
-      } else {
-        var mode = arg.toUpperCase();
-        setScriptProperty_('PORTFOLIO_MODE', mode);
-        updateSettingValueInSheet_('PORTFOLIO_MODE', mode);
-        sendTelegramMessage('🔄 <b>[운용 모드 전환]</b>\n\n포트폴리오 주식 운용 모드가 <b>' + mode + '</b>(으)로 즉각 변경되었습니다.');
-        collectHoldingsCurrent();
-      }
+      // 🚀 [패치] 모의투자 기능 잠정 중단 룰에 따른 모드 전환 명령어 차단
+      sendTelegramMessage('⚠️ <b>모의투자 서비스 중단 안내</b>\n\n모의투자 관련 기능이 비활성화되었습니다. 현재 포트폴리오는 실제 계좌(REAL) 모드로 상시 고정 운용됩니다.');
     }
     else if (command === '/set') {
       var rawArgs = text.split(' ').slice(1);
@@ -392,62 +375,12 @@ function doPost(e) {
       }
     }
     else if (command === '/buy') {
-      var rawArgs = text.split(' ').slice(1);
-      if (rawArgs.length < 2) {
-        sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n👉 <b>모의 매수 형식:</b>\n<code>/buy [종목코드] [수량] [지정가격(선택)]</code>');
-      } else {
-        var symbol = rawArgs[0];
-        var qty = Number(rawArgs[1]);
-        var customPrice = rawArgs[2] ? Number(rawArgs[2]) : 0;
-        
-        if (isNaN(qty) || !isFinite(qty) || qty <= 0) {
-          sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n매수 수량은 0보다 큰 숫자여야 합니다.');
-        } else if (rawArgs[2] && (isNaN(customPrice) || !isFinite(customPrice) || customPrice < 0)) {
-          sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n지정가는 0 이상의 숫자여야 합니다.');
-        } else {
-          var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toUpperCase();
-          if (portMode !== 'MOCK') {
-            sendTelegramMessage('⚠️ <b>운용 모드 오류</b>\n\n현재 운용 모드가 실계좌(REAL)입니다. 모의 주문을 전송할 수 없습니다. <code>/mode mock</code> 명령어로 전환 후 이용해 주세요.');
-          } else {
-            sendTelegramMessage('📥 <b>' + symbol + '</b> 모의 매수 요청을 처리하고 있습니다...');
-            try {
-              var res = executePaperOrder_(symbol, 'BUY', qty, customPrice);
-              sendTelegramMessage('🔺 <b>[한투 API 모의매수 주문 송신]</b>\n\n• 종목명: <b>' + res.name + '</b> (' + symbol + ')\n• 주문 수량: <b>' + formatNumber_(qty) + '주</b>\n• 시장가(또는 지정가) 주문이 정상적으로 송신되었습니다. 체결 결과는 잠시 후 대시보드 및 잔고조회(/holdings)로 반영됩니다.');
-            } catch(orderErr) {
-              sendTelegramMessage('❌ <b>모의 주문 실패:</b> ' + orderErr.message);
-            }
-          }
-        }
-      }
+      // 🚀 [패치] 모의투자 기능 잠정 중단 룰에 따른 모의 매수 주문 명령어 차단
+      sendTelegramMessage('⚠️ <b>모의투자 서비스 중단 안내</b>\n\n모의투자 주문 기능이 비활성화되었습니다. 실제 주문만 이용해 주시기 바랍니다.');
     }
     else if (command === '/sell_paper') {
-      var rawArgs = text.split(' ').slice(1);
-      if (rawArgs.length < 2) {
-        sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n👉 <b>모의 매도 형식:</b>\n<code>/sell_paper [종목코드] [수량] [지정가격(선택)]</code>');
-      } else {
-        var symbol = rawArgs[0];
-        var qty = Number(rawArgs[1]);
-        var customPrice = rawArgs[2] ? Number(rawArgs[2]) : 0;
-        
-        if (isNaN(qty) || !isFinite(qty) || qty <= 0) {
-          sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n매도 수량은 0보다 큰 숫자여야 합니다.');
-        } else if (rawArgs[2] && (isNaN(customPrice) || !isFinite(customPrice) || customPrice < 0)) {
-          sendTelegramMessage('⚠️ <b>입력 오류</b>\n\n지정가는 0 이상의 숫자여야 합니다.');
-        } else {
-          var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'real')).toUpperCase();
-          if (portMode !== 'MOCK') {
-            sendTelegramMessage('⚠️ <b>운용 모드 오류</b>\n\n현재 운용 모드가 실계좌(REAL)입니다. 모의 주문을 전송할 수 없습니다. <code>/mode mock</code> 명령어로 전환 후 이용해 주세요.');
-          } else {
-            sendTelegramMessage('📥 <b>' + symbol + '</b> 모의 매도 요청을 처리하고 있습니다...');
-            try {
-              var res = executePaperOrder_(symbol, 'SELL', qty, customPrice);
-              sendTelegramMessage('🔻 <b>[한투 API 모의매도 주문 송신]</b>\n\n• 종목명: <b>' + res.name + '</b> (' + symbol + ')\n• 주문 수량: <b>' + formatNumber_(qty) + '주</b>\n• 시장가(또는 지정가) 주문이 정상적으로 송신되었습니다. 체결 결과는 잠시 후 대시보드 및 잔고조회(/holdings)로 반영됩니다.');
-            } catch(orderErr) {
-              sendTelegramMessage('❌ <b>모의 주문 실패:</b> ' + orderErr.message);
-            }
-          }
-        }
-      }
+      // 🚀 [패치] 모의투자 기능 잠정 중단 룰에 따른 모의 매도 주문 명령어 차단
+      sendTelegramMessage('⚠️ <b>모의투자 서비스 중단 안내</b>\n\n모의투자 주문 기능이 비활성화되었습니다. 실제 주문만 이용해 주시기 바랍니다.');
     }
     else if (command === '/ai') {
       var arg = text.split(' ')[1];
@@ -2227,7 +2160,7 @@ function runDailyClosePaperTradingReport() {
   
   var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
   
-  if (portMode === 'MOCK') {
+  if (false && portMode === 'MOCK') {
     var seedMoney = parseFloat(getScriptProperty_('KIS_MOCK_SEED_MONEY', '10000000'));
     if (isNaN(seedMoney) || seedMoney <= 0) {
       seedMoney = 10000000;
