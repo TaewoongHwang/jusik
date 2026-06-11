@@ -11,7 +11,7 @@ function fetchKisDomesticAccountBalance_(cano, productCode, customAuth) {
   var isMock = false;
   if (customAuth && customAuth.baseUrl && customAuth.baseUrl.indexOf('vts') >= 0) {
     isMock = true;
-  } else if (!customAuth && account.baseUrl && account.baseUrl.indexOf('vts') >= 0) {
+  } else if (!customAuth && account.mockBaseUrl && account.mockBaseUrl.indexOf('vts') >= 0) {
     isMock = true;
   }
   if (isMock) {
@@ -88,7 +88,7 @@ function fetchKisOverseasAccountBalance_(exchange, cano, productCode, customAuth
   var isMock = false;
   if (customAuth && customAuth.baseUrl && customAuth.baseUrl.indexOf('vts') >= 0) {
     isMock = true;
-  } else if (!customAuth && account.baseUrl && account.baseUrl.indexOf('vts') >= 0) {
+  } else if (!customAuth && account.mockBaseUrl && account.mockBaseUrl.indexOf('vts') >= 0) {
     isMock = true;
   }
   if (isMock) {
