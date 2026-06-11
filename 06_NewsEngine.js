@@ -64,16 +64,22 @@ function fetchLiveFinancialNews_() {
         }
       } catch(de) {}
       
-      // 설명글 HTML 태그 제거 및 85자 절삭
-      var cleanDesc = desc.replace(/<[^>]*>/g, '')
-                          .replace(/&quot;/g, '"')
-                          .replace(/&amp;/g, '&')
-                          .replace(/&lt;/g, '<')
-                          .replace(/&gt;/g, '>')
-                          .replace(/\s+/g, ' ')
-                          .trim();
-      if (cleanDesc.length > 85) {
-        cleanDesc = cleanDesc.substring(0, 85) + '...';
+      // 설명글 HTML 태그 제거 및 85자 절삭 (관련 링크 나열 감지 시 대체문구 치환)
+      var cleanDesc = "";
+      if (desc.indexOf('<ol>') >= 0 || desc.indexOf('<li>') >= 0 || desc.indexOf('href=') >= 0) {
+        cleanDesc = "상세 시황 및 관련 기사 정보는 원문 기사 링크에서 확인하실 수 있습니다.";
+      } else {
+        cleanDesc = desc.replace(/<[^>]*>/g, '')
+                        .replace(/&quot;/g, '"')
+                        .replace(/&amp;/g, '&')
+                        .replace(/&lt;/g, '<')
+                        .replace(/&gt;/g, '>')
+                        .replace(/&nbsp;/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+        if (cleanDesc.length > 85) {
+          cleanDesc = cleanDesc.substring(0, 85) + '...';
+        }
       }
       
       items.push({

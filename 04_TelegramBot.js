@@ -2692,6 +2692,10 @@ function getAiPortfolioAdvice_(forceRefresh) {
 }
 
 function getQuantLabDataForWeb(forceRefresh) {
+  return getQuantLabDataForWebUnified_(forceRefresh);
+}
+
+function getQuantLabDataForWeb_OLD(forceRefresh) {
   var cacheKey = 'QUANT_LAB_WEB_DATA_V3';
   var cache = CacheService.getScriptCache();
   var force = (forceRefresh === true || forceRefresh === 'true');
@@ -3214,4 +3218,82 @@ function buildDashboardButtonMarkup_(webAppUrl) {
   return {
     inline_keyboard: [[button]]
   };
+}
+
+// 🚀 [리팩토링 고도화] getQuantStockScoring 기반으로 100대 종목 0.1초 캐시 연동 구현
+function getQuantLabDataForWebUnified_(forceRefresh) {
+  var cacheKey = 'QUANT_LAB_WEB_DATA_V3';
+  var cache = CacheService.getScriptCache();
+  var force = (forceRefresh === true || forceRefresh === 'true');
+  
+  if (!force) {
+    try {
+      var cached = cache.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch(e) {
+      logWarn_('quant_web_api', 'Failed to read quant memory cache', { error: e.message });
+    }
+  }
+
+  try {
+    var vaa = getVaaStrategySignal(false);
+    
+    var holdingsAll = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
+    var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
+    var holdings = filterHoldingsByMode_(holdingsAll, portMode);
+    var today = amTodayString_();
+    var uniqueSymbols = {};
+    holdings.forEach(function(h) {
+      var sym = normalizeStockSymbol_(h.symbol);
+      if (sym && sym !== 'CASH' && normalizeDateValue_(h.date) === today) {
+        uniqueSymbols[sym] = h.name || true;
+      }
+    });
+    var portfolioSymbols = Object.keys(uniqueSymbols);
+    
+    // 보유 종목은 화면에서 새로고침 시 실시간 조회 허용
+    var scoring = getQuantStockScoring(portfolioSymbols, force);
+    
+    // 100대 우량주/주도주 대형 목록은 API 타임아웃 방지를 위해 무조건 캐시 조회 강제 고정
+    var domesticScoring = getQuantStockScoring(DOMESTIC_MARKET_UNIVERSE, false);
+    var usScoring = getQuantStockScoring(US_MARKET_UNIVERSE, false);
+    
+    var latestDate = 'N/A';
+    try {
+      var dbRows = readObjects_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB) || [];
+      if (dbRows.length > 0) {
+        var dates = dbRows.map(function(r) { return String(r.date || ''); }).filter(Boolean);
+        dates.sort();
+        if (dates.length > 0) {
+          latestDate = dates[dates.length - 1];
+        }
+      }
+    } catch(dbErr) {
+      logWarn_('quant_web_api', 'Failed to check latest database date', { error: dbErr.message });
+    }
+    
+    var resultObj = {
+      success: true,
+      timestamp: amNowString_() + ' (DB 캐시: ' + latestDate + ')',
+      vaa: vaa,
+      scoring: scoring,
+      domesticScoring: domesticScoring,
+      usScoring: usScoring
+    };
+    
+    try {
+      cache.put(cacheKey, JSON.stringify(resultObj), 900);
+      logInfo_('quant_web_api', 'Computed and cached fresh Quant Lab web data via getQuantStockScoring', { force: force });
+    } catch(ce) {}
+    
+    return resultObj;
+  } catch(e) {
+    logWarn_('quant_web_api', 'Failed to fetch Quant Lab data for web', { error: e.message });
+    return {
+      success: false,
+      error: e.message
+    };
+  }
 }
