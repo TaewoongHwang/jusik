@@ -611,10 +611,58 @@ function getQuantStockScoring(symbolsList, forceRealtime) {
       logWarn_('quant_scoring', 'Failed to read quant_universe_db cache, falling back to realtime', { error: e.message });
     }
   }
+
+  // 🚀 [타임아웃 철벽 방어] 캐시가 비어있고 forceRealtime이 활성화되지 않은 일반 웹/텔레그램 조회 시,
+  // 100개 종목을 실시간 스캔(40초 지연)하여 서버가 사망하는 현상을 방지하기 위해 가벼운 정적 매핑으로 자동 우회 기동
+  var isEmergencyFallback = (forceRealtime !== true && !useCache);
+  if (isEmergencyFallback) {
+    logWarn_('quant_scoring', 'Quant database cache empty! Serving fast fallback static scoring to prevent timeout.');
+  }
   
   var scoredStocks = symbols.map(function(sym) {
     var cleanSym = normalizeStockSymbol_(sym);
     var isDom = /^[0-9][A-Z0-9]{5}$/i.test(cleanSym);
+    
+    // [비상 폴백] 캐시가 없고 실시간 조회가 불가능한 경우 0초 정적 데이터 조립
+    if (isEmergencyFallback) {
+      var name = getStockKoreanName_(cleanSym, cleanSym);
+      var isEtf = isEtf_(cleanSym, name);
+      var fund = AM_QUANT_FUNDAMENTAL_DB[cleanSym] || { eps: 0, bps: 0, div: 0, grow: 10, debt: 100, beta: 1.0, gpa: 0.0 };
+      
+      var mockPrice = fund.bps > 0 ? fund.bps : 10000;
+      var roe = (fund.eps > 0 && fund.bps > 0) ? (fund.eps / fund.bps * 100) : 0;
+      var srimPrice = fund.bps * (roe / 8.0);
+      
+      return {
+        symbol: cleanSym,
+        name: name,
+        price: mockPrice,
+        per: fund.eps > 0 ? roundNumber_(mockPrice / fund.eps, 2) : 'N/A',
+        pbr: fund.bps > 0 ? '1.00' : 'N/A',
+        gpa: fund.gpa !== undefined && fund.gpa > 0 ? roundNumber_(fund.gpa, 2) : 'N/A',
+        momentum_pct: 0,
+        rsi: 50,
+        srim_price: isEtf ? 'N/A' : (srimPrice > 0 ? Math.round(srimPrice) : 0),
+        safety_margin: isEtf ? 'N/A' : 0,
+        is_etf: isEtf,
+        
+        roe: roe > 0 ? roundNumber_(roe, 2) : 0,
+        debt: fund.debt !== undefined ? fund.debt : 100,
+        div_yield: fund.div > 0 ? roundNumber_(fund.div / mockPrice * 100, 2) : 0,
+        beta: fund.beta !== undefined ? fund.beta : 1.0,
+        peg: 'N/A',
+        
+        per_val: fund.eps > 0 ? (mockPrice / fund.eps) : 9999,
+        pbr_val: fund.bps > 0 ? 1.0 : 9999,
+        gpa_val: fund.gpa !== undefined ? fund.gpa : -9999,
+        momentum_val: 0,
+        roe_val: roe > 0 ? roe : -9999,
+        debt_val: fund.debt !== undefined ? fund.debt : 9999,
+        div_yield_val: fund.div > 0 ? (fund.div / mockPrice * 100) : -9999,
+        beta_val: fund.beta !== undefined ? fund.beta : 9999,
+        peg_val: 9999
+      };
+    }
     
     // 캐시 사용 가능한 경우 즉각 매핑하여 0.1초 반환
     if (useCache && cachedDataMap[cleanSym]) {

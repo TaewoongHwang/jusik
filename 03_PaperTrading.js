@@ -149,7 +149,7 @@ function normalizeKisOverseasAccountBalance_(response) {
   };
 }
 
-function fetchKisOverseasDecimalAccountBalance_() {
+function fetchKisOverseasDecimalAccountBalance_(customAuth) {
   var account = getKisAccountConfig_();
   return kisGet_('/uapi/overseas-stock/v1/trading/inquire-present-decimal-balance', {
     CANO: account.cano,
@@ -157,7 +157,7 @@ function fetchKisOverseasDecimalAccountBalance_() {
     WCRC_FRCR_DVSN_CD: '02',
     CTX_AREA_FK200: '',
     CTX_AREA_NK200: ''
-  }, 'OVTR3821R');
+  }, 'OVTR3821R', customAuth);
 }
 
 function normalizeKisOverseasDecimalAccountBalance_(response) {
@@ -282,38 +282,61 @@ function collectHoldingsCurrent(forceRefresh) {
       var account = getKisAccountConfig_();
       
       // 1. 국내 KIS 실계좌 잔고 룩업 (일반 위탁계좌)
+      var domesticResponse = null;
       try {
-        var response = fetchKisDomesticAccountBalance_(account.cano, account.accountProductCode);
-        var normalized = normalizeKisAccountBalance_(response, 'kis_domestic_balance');
-        normalized.holdings.forEach(function(h) {
-          totalPurchase += h.purchase_amount;
-          totalEval += h.eval_amount;
-          assets.push(h);
-        });
-        
-        // 국내 예수금 가산 및 CASH 자산화
-        var cash = normalized.snapshot.cash_amount || 0;
-        if (cash > 0) {
-          totalPurchase += cash;
-          totalEval += cash;
-          assets.push({
-            date: today,
-            symbol: 'CASH',
-            name: '예수금 (위탁계좌)',
-            quantity: cash,
-            avg_price: 1,
-            current_price: 1,
-            purchase_amount: cash,
-            eval_amount: cash,
-            profit_loss_amount: 0,
-            profit_loss_pct: 0,
-            portfolio_weight_pct: 0,
-            source: 'kis_cash',
-            currency: 'KRW'
-          });
-        }
+        domesticResponse = fetchKisDomesticAccountBalance_(account.cano, account.accountProductCode);
       } catch(e) {
-        logWarn_('portfolio_collector', 'Failed to fetch domestic balance', { error: e.message });
+        var errStr = String(e.message || '');
+        // 인증 관련 오류(AppKey 오류 등) 감지 시, ISA 인증정보(AppKey/AppSecret)가 세팅되어 있다면 이를 활용해 즉시 자가치유 재시도 집행
+        if (account.isaAppKey && account.isaAppSecret && (errStr.indexOf('Business Error') >= 0 || errStr.indexOf('token') >= 0 || errStr.indexOf('인증') >= 0 || errStr.indexOf('appkey') >= 0)) {
+          logWarn_('portfolio_collector', 'Domestic balance fetch failed with auth error. Attempting self-healing retry using KIS_ISA_APP_KEY...', { error: errStr });
+          try {
+            var isaAuthForDom = {
+              appKey: account.isaAppKey,
+              appSecret: account.isaAppSecret
+            };
+            domesticResponse = fetchKisDomesticAccountBalance_(account.cano, account.accountProductCode, isaAuthForDom);
+          } catch(retryErr) {
+            logWarn_('portfolio_collector', 'Self-healing domestic balance fetch retry failed', { error: retryErr.message });
+          }
+        } else {
+          logWarn_('portfolio_collector', 'Failed to fetch domestic balance', { error: e.message });
+        }
+      }
+
+      if (domesticResponse) {
+        try {
+          var normalized = normalizeKisAccountBalance_(domesticResponse, 'kis_domestic_balance');
+          normalized.holdings.forEach(function(h) {
+            totalPurchase += h.purchase_amount;
+            totalEval += h.eval_amount;
+            assets.push(h);
+          });
+          
+          // 국내 예수금 가산 및 CASH 자산화
+          var cash = normalized.snapshot.cash_amount || 0;
+          if (cash > 0) {
+            totalPurchase += cash;
+            totalEval += cash;
+            assets.push({
+              date: today,
+              symbol: 'CASH',
+              name: '예수금 (위탁계좌)',
+              quantity: cash,
+              avg_price: 1,
+              current_price: 1,
+              purchase_amount: cash,
+              eval_amount: cash,
+              profit_loss_amount: 0,
+              profit_loss_pct: 0,
+              portfolio_weight_pct: 0,
+              source: 'kis_cash',
+              currency: 'KRW'
+            });
+          }
+        } catch(parseErr) {
+          logWarn_('portfolio_collector', 'Failed to parse domestic balance', { error: parseErr.message });
+        }
       }
       
       // 1-B. 🚀 [신설] 국내 KIS ISA 계좌 잔고 룩업 및 병합
@@ -479,32 +502,86 @@ function collectHoldingsCurrent(forceRefresh) {
       var totalFrCash = 0;
       
       // (A) 일반 나스닥 조회
+      var nasResponse = null;
       try {
-        var nasResponse = fetchKisOverseasAccountBalance_('NASD');
-        var normalizedNas = normalizeKisOverseasAccountBalance_(nasResponse);
-        rawOverseasHoldings = rawOverseasHoldings.concat(normalizedNas.holdings);
-        totalFrCash += normalizedNas.snapshot.cash_amount || 0;
+        nasResponse = fetchKisOverseasAccountBalance_('NASD');
       } catch(e) {
-        logWarn_('portfolio_collector', 'Failed to fetch NASD balance', { error: e.message });
+        var errStr = String(e.message || '');
+        if (account.isaAppKey && account.isaAppSecret && (errStr.indexOf('Business Error') >= 0 || errStr.indexOf('token') >= 0 || errStr.indexOf('인증') >= 0 || errStr.indexOf('appkey') >= 0)) {
+          logWarn_('portfolio_collector', 'NASD balance fetch failed with auth error. Attempting self-healing retry using KIS_ISA_APP_KEY...');
+          try {
+            var isaAuthForDom = { appKey: account.isaAppKey, appSecret: account.isaAppSecret };
+            nasResponse = fetchKisOverseasAccountBalance_('NASD', account.cano, account.accountProductCode, isaAuthForDom);
+          } catch(retryErr) {
+            logWarn_('portfolio_collector', 'Self-healing NASD balance fetch retry failed', { error: retryErr.message });
+          }
+        }
+        if (!nasResponse) logWarn_('portfolio_collector', 'Failed to fetch NASD balance', { error: e.message });
+      }
+      
+      if (nasResponse) {
+        try {
+          var normalizedNas = normalizeKisOverseasAccountBalance_(nasResponse);
+          rawOverseasHoldings = rawOverseasHoldings.concat(normalizedNas.holdings);
+          totalFrCash += normalizedNas.snapshot.cash_amount || 0;
+        } catch(parseErr) {
+          logWarn_('portfolio_collector', 'Failed to parse NASD balance', { error: parseErr.message });
+        }
       }
       
       // (B) 일반 뉴욕증시 조회
+      var nysResponse = null;
       try {
-        var nysResponse = fetchKisOverseasAccountBalance_('NYSE');
-        var normalizedNys = normalizeKisOverseasAccountBalance_(nysResponse);
-        rawOverseasHoldings = rawOverseasHoldings.concat(normalizedNys.holdings);
-        totalFrCash += normalizedNys.snapshot.cash_amount || 0;
+        nysResponse = fetchKisOverseasAccountBalance_('NYSE');
       } catch(e) {
-        logWarn_('portfolio_collector', 'Failed to fetch NYSE balance', { error: e.message });
+        var errStr = String(e.message || '');
+        if (account.isaAppKey && account.isaAppSecret && (errStr.indexOf('Business Error') >= 0 || errStr.indexOf('token') >= 0 || errStr.indexOf('인증') >= 0 || errStr.indexOf('appkey') >= 0)) {
+          logWarn_('portfolio_collector', 'NYSE balance fetch failed with auth error. Attempting self-healing retry using KIS_ISA_APP_KEY...');
+          try {
+            var isaAuthForDom = { appKey: account.isaAppKey, appSecret: account.isaAppSecret };
+            nysResponse = fetchKisOverseasAccountBalance_('NYSE', account.cano, account.accountProductCode, isaAuthForDom);
+          } catch(retryErr) {
+            logWarn_('portfolio_collector', 'Self-healing NYSE balance fetch retry failed', { error: retryErr.message });
+          }
+        }
+        if (!nysResponse) logWarn_('portfolio_collector', 'Failed to fetch NYSE balance', { error: e.message });
+      }
+      
+      if (nysResponse) {
+        try {
+          var normalizedNys = normalizeKisOverseasAccountBalance_(nysResponse);
+          rawOverseasHoldings = rawOverseasHoldings.concat(normalizedNys.holdings);
+          totalFrCash += normalizedNys.snapshot.cash_amount || 0;
+        } catch(parseErr) {
+          logWarn_('portfolio_collector', 'Failed to parse NYSE balance', { error: parseErr.message });
+        }
       }
       
       // (C) 미니스탁 소수점 잔고 조회
+      var decResponse = null;
       try {
-        var decResponse = fetchKisOverseasDecimalAccountBalance_();
-        var normalizedDec = normalizeKisOverseasDecimalAccountBalance_(decResponse);
-        rawOverseasHoldings = rawOverseasHoldings.concat(normalizedDec.holdings);
+        decResponse = fetchKisOverseasDecimalAccountBalance_();
       } catch(e) {
-        logWarn_('portfolio_collector', 'Failed to fetch Overseas Decimal balance', { error: e.message });
+        var errStr = String(e.message || '');
+        if (account.isaAppKey && account.isaAppSecret && (errStr.indexOf('Business Error') >= 0 || errStr.indexOf('token') >= 0 || errStr.indexOf('인증') >= 0 || errStr.indexOf('appkey') >= 0)) {
+          logWarn_('portfolio_collector', 'Overseas Decimal balance fetch failed with auth error. Attempting self-healing retry using KIS_ISA_APP_KEY...');
+          try {
+            var isaAuthForDom = { appKey: account.isaAppKey, appSecret: account.isaAppSecret };
+            decResponse = fetchKisOverseasDecimalAccountBalance_(isaAuthForDom);
+          } catch(retryErr) {
+            logWarn_('portfolio_collector', 'Self-healing Overseas Decimal balance fetch retry failed', { error: retryErr.message });
+          }
+        }
+        if (!decResponse) logWarn_('portfolio_collector', 'Failed to fetch Overseas Decimal balance', { error: e.message });
+      }
+      
+      if (decResponse) {
+        try {
+          var normalizedDec = normalizeKisOverseasDecimalAccountBalance_(decResponse);
+          rawOverseasHoldings = rawOverseasHoldings.concat(normalizedDec.holdings);
+        } catch(parseErr) {
+          logWarn_('portfolio_collector', 'Failed to parse Overseas Decimal balance', { error: parseErr.message });
+        }
       }
       
       // (D) 동일 종목 중복 가중평균 병합
