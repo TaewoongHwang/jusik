@@ -15,11 +15,11 @@
   <script>
     (function () {
       // 🔒 Supabase 설정 (대시보드 Settings -> API에서 발급받은 값을 입력하세요)
-      var supabaseUrl = "YOUR_SUPABASE_URL";
-      var supabaseKey = "YOUR_SUPABASE_ANON_KEY";
+      var supabaseUrl = "https://pynzwgmnjuyitwbzurqf.supabase.co";
+      var supabaseKey = "sb_publishable_fXmDKBoh2KyrbcA44WYPvw_9gSif7KB";
 
       try {
-        if (supabaseUrl && supabaseUrl !== "YOUR_SUPABASE_URL") {
+        if (supabaseUrl && supabaseUrl.indexOf("YOUR_") !== 0 && supabaseKey && supabaseKey.indexOf("YOUR_") !== 0) {
           window.supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
           console.log("🚀 [Supabase] 실시간 데이터베이스 연동 활성화 완료.");
         } else {
@@ -2636,7 +2636,7 @@
       if (window.supabaseClient && !isForce) {
         if (!supabaseSubscription) {
           showHUD('loading', '실시간 데이터 연결 중', 'Supabase PostgreSQL 실시간 데이터 채널에 연결하고 있습니다...');
-          
+
           // 초기 데이터 1회 가져오기
           fetchPortfolioDataFromSupabase();
 
@@ -2705,7 +2705,7 @@
           const curPrice = Number(h.current_price || 0);
           const pAmt = Number(h.purchase_amount || 0);
           const eAmt = Number(h.eval_amount || 0);
-          
+
           return {
             broker: h.source,
             symbol: h.symbol,
