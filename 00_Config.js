@@ -55,7 +55,7 @@ AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.MANUAL_HOLDINGS] = ['broker', 'symbol', 'name'
 AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.HOLDINGS_CURRENT] = [
   'date', 'symbol', 'name', 'quantity', 'avg_price', 'current_price', 
   'purchase_amount', 'eval_amount', 'profit_loss_amount', 'profit_loss_pct', 
-  'portfolio_weight_pct', 'source', 'currency'
+  'portfolio_weight_pct', 'source', 'currency', 'change_pct'
 ];
 AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.PAPER_PORTFOLIO] = [
   'date', 'cash_amount', 'stock_eval_amount', 'total_eval_amount', 
