@@ -3,10 +3,10 @@
 // ==================================================
 
 /**
- * 💡 핵심 대형주 및 보유 종목 주당순이익(EPS) 및 주당순자산(BPS) 실시간 역산용 DB
- * (2025/2026 결산 기준 정밀 룩업 마스터 사전)
+ * 💡 핵심 대형주 펀더멘탈 정적 폴백 DB (2025/2026 결산 기준)
+ * quant_universe_db 시트가 비어있을 때만 사용됨
  */
-var AM_QUANT_FUNDAMENTAL_DB = {
+var AM_QUANT_FUNDAMENTAL_DB_STATIC_ = {
   // 국내 주요 대형주 (30대 우량주 기준 보강: div, grow, debt, beta, gpa 추가)
   '005930': { eps: 4200, bps: 56000, div: 1445, grow: 12, debt: 30, beta: 0.95, gpa: 0.18 },   // 삼성전자
   '000660': { eps: 13500, bps: 88000, div: 1200, grow: 25, debt: 55, beta: 1.25, gpa: 0.22 },  // SK하이닉스
@@ -69,49 +69,94 @@ var AM_QUANT_FUNDAMENTAL_DB = {
   '302440': { eps: 1200, bps: 16000, div: 0, grow: 25, debt: 75, beta: 1.20, gpa: 0.14 },     // SK바이오팜
   '352820': { eps: 4800, bps: 75000, div: 0, grow: 15, debt: 65, beta: 1.10, gpa: 0.11 },     // 하이브
 
-  // 미국 주요 대형주 (21대 우량주 기준 보강: div, grow, debt, beta, gpa 추가)
-  'NVDA': { eps: 2.85, bps: 6.5, div: 0.04, grow: 45, debt: 25, beta: 1.85, gpa: 0.65 },     // 엔비디아
-  'GOOG': { eps: 7.2, bps: 35.0, div: 0.80, grow: 16, debt: 12, beta: 1.05, gpa: 0.35 },     // 알파벳 C (구글 C)
-  'GOOGL': { eps: 7.2, bps: 35.0, div: 0.80, grow: 16, debt: 12, beta: 1.05, gpa: 0.35 },    // 알파벳 A (구글 A)
-  'AAPL': { eps: 6.65, bps: 5.4, div: 1.00, grow: 8, debt: 140, beta: 1.00, gpa: 0.42 },     // 애플
-  'MSFT': { eps: 11.8, bps: 38.5, div: 3.00, grow: 14, debt: 42, beta: 0.90, gpa: 0.48 },    // 마이크로소프트
-  'AMZN': { eps: 4.25, bps: 21.5, div: 0.00, grow: 22, debt: 75, beta: 1.15, gpa: 0.45 },    // 아마존
-  'META': { eps: 22.0, bps: 68.0, div: 2.00, grow: 24, debt: 18, beta: 1.20, gpa: 0.46 },    // 메타
-  'TSLA': { eps: 2.5, bps: 18.0, div: 0.00, grow: 10, debt: 15, beta: 1.45, gpa: 0.18 },     // 테슬라
-  'AVGO': { eps: 34.0, bps: 72.0, div: 21.20, grow: 18, debt: 120, beta: 1.22, gpa: 0.36 },   // 브로드컴
-  'LLY': { eps: 14.5, bps: 19.0, div: 5.20, grow: 28, debt: 95, beta: 0.85, gpa: 0.28 },     // 일라이 릴리
-  'UNH': { eps: 24.5, bps: 105.0, div: 8.40, grow: 11, debt: 110, beta: 0.60, gpa: 0.25 },    // 유나이티드헬스
-  'JPM': { eps: 16.5, bps: 110.0, div: 4.60, grow: 8, debt: 130, beta: 1.10, gpa: 0.04 },     // 제이피모간
-  'V': { eps: 10.0, bps: 23.0, div: 2.20, grow: 13, debt: 90, beta: 0.95, gpa: 0.45 },        // 비자
-  'MA': { eps: 13.5, bps: 15.0, div: 2.64, grow: 15, debt: 110, beta: 1.00, gpa: 0.48 },      // 마스터카드
-  'PG': { eps: 6.5, bps: 20.0, div: 3.84, grow: 6, debt: 80, beta: 0.45, gpa: 0.28 },        // 프록터앤갬블
-  'XOM': { eps: 9.5, bps: 58.0, div: 3.80, grow: 4, debt: 20, beta: 1.10, gpa: 0.15 },        // 엑슨모빌
-  'JNJ': { eps: 10.0, bps: 32.0, div: 4.80, grow: 5, debt: 45, beta: 0.55, gpa: 0.26 },       // 존슨앤존슨
-  'HD': { eps: 15.2, bps: 8.5, div: 9.00, grow: 7, debt: 220, beta: 0.95, gpa: 0.38 },        // 홈디포
-  'COST': { eps: 16.0, bps: 55.0, div: 4.60, grow: 10, debt: 35, beta: 0.78, gpa: 0.16 },     // 코스트코
-  'ABBV': { eps: 11.2, bps: 8.0, div: 6.20, grow: 6, debt: 350, beta: 0.58, gpa: 0.28 },      // 애브비
-  'AMD': { eps: 3.5, bps: 38.0, div: 0.00, grow: 28, debt: 10, beta: 1.70, gpa: 0.28 },       // AMD
-  'NFLX': { eps: 18.5, bps: 52.0, div: 0.00, grow: 22, debt: 60, beta: 1.20, gpa: 0.38 },     // 넷플릭스
-  'ADBE': { eps: 17.8, bps: 45.0, div: 0.00, grow: 12, debt: 30, beta: 1.12, gpa: 0.44 },     // 어도비
-  'CRM': { eps: 9.8, bps: 62.0, div: 1.60, grow: 15, debt: 25, beta: 1.10, gpa: 0.30 },      // 세일즈포스
-  'CSCO': { eps: 3.8, bps: 11.5, div: 1.60, grow: 5, debt: 50, beta: 0.80, gpa: 0.35 },       // 시스코
-  'INTC': { eps: 0.8, bps: 25.0, div: 0.50, grow: 12, debt: 45, beta: 1.15, gpa: 0.12 },      // 인텔
-  'QCOM': { eps: 10.2, bps: 22.0, div: 3.40, grow: 10, debt: 70, beta: 1.20, gpa: 0.41 },     // 퀄컴
-  'TXN': { eps: 7.2, bps: 18.5, div: 5.20, grow: 8, debt: 55, beta: 0.95, gpa: 0.36 },       // 텍사스인스트루먼트
-  'ORCL': { eps: 5.8, bps: 8.2, div: 1.60, grow: 12, debt: 340, beta: 1.00, gpa: 0.32 },      // 오라클
-  'NKE': { eps: 3.85, bps: 9.2, div: 1.48, grow: 9, debt: 65, beta: 1.05, gpa: 0.35 },       // 나이키
-  'KO': { eps: 2.85, bps: 6.2, div: 1.92, grow: 5, debt: 110, beta: 0.50, gpa: 0.28 },        // 코카콜라
-  'PEP': { eps: 8.2, bps: 15.5, div: 5.06, grow: 6, debt: 180, beta: 0.55, gpa: 0.27 },       // 펩시
-  'DIS': { eps: 4.8, bps: 58.0, div: 0.90, grow: 10, debt: 48, beta: 1.10, gpa: 0.14 },       // 디즈니
-  'WMT': { eps: 2.4, bps: 10.5, div: 0.84, grow: 7, debt: 65, beta: 0.50, gpa: 0.22 },        // 월마트
-  'BAC': { eps: 3.2, bps: 34.5, div: 0.96, grow: 5, debt: 120, beta: 1.15, gpa: 0.03 },       // 뱅크오브아메리카
-  'MRK': { eps: 6.8, bps: 28.0, div: 3.08, grow: 6, debt: 75, beta: 0.40, gpa: 0.22 },        // 머크
-  'PFE': { eps: 2.2, bps: 16.5, div: 1.68, grow: -5, debt: 85, beta: 0.65, gpa: 0.16 },       // 화이자
-  'MCD': { eps: 11.8, bps: -12.0, div: 6.68, grow: 6, debt: 450, beta: 0.68, gpa: 0.40 },     // 맥도날드
-  'NVO': { eps: 2.7, bps: 4.8, div: 0.95, grow: 25, debt: 15, beta: 0.75, gpa: 0.42 },        // 노보노디스크
-  'ASML': { eps: 22.5, bps: 48.0, div: 6.80, grow: 18, debt: 25, beta: 1.25, gpa: 0.38 },      // ASML
-  'GOOGL': { eps: 7.2, bps: 35.0, div: 0.80, grow: 16, debt: 12, beta: 1.05, gpa: 0.35 }      // 알파벳 A (구글 A)
+  // 미국 주요 대형주
+  'NVDA': { eps: 2.85, bps: 6.5, div: 0.04, grow: 45, debt: 25, beta: 1.85, gpa: 0.65 },
+  'GOOG': { eps: 7.2, bps: 35.0, div: 0.80, grow: 16, debt: 12, beta: 1.05, gpa: 0.35 },
+  'GOOGL': { eps: 7.2, bps: 35.0, div: 0.80, grow: 16, debt: 12, beta: 1.05, gpa: 0.35 },
+  'AAPL': { eps: 6.65, bps: 5.4, div: 1.00, grow: 8, debt: 140, beta: 1.00, gpa: 0.42 },
+  'MSFT': { eps: 11.8, bps: 38.5, div: 3.00, grow: 14, debt: 42, beta: 0.90, gpa: 0.48 },
+  'AMZN': { eps: 4.25, bps: 21.5, div: 0.00, grow: 22, debt: 75, beta: 1.15, gpa: 0.45 },
+  'META': { eps: 22.0, bps: 68.0, div: 2.00, grow: 24, debt: 18, beta: 1.20, gpa: 0.46 },
+  'TSLA': { eps: 2.5, bps: 18.0, div: 0.00, grow: 10, debt: 15, beta: 1.45, gpa: 0.18 },
+  'AVGO': { eps: 34.0, bps: 72.0, div: 21.20, grow: 18, debt: 120, beta: 1.22, gpa: 0.36 },
+  'LLY': { eps: 14.5, bps: 19.0, div: 5.20, grow: 28, debt: 95, beta: 0.85, gpa: 0.28 },
+  'UNH': { eps: 24.5, bps: 105.0, div: 8.40, grow: 11, debt: 110, beta: 0.60, gpa: 0.25 },
+  'JPM': { eps: 16.5, bps: 110.0, div: 4.60, grow: 8, debt: 130, beta: 1.10, gpa: 0.04 },
+  'V': { eps: 10.0, bps: 23.0, div: 2.20, grow: 13, debt: 90, beta: 0.95, gpa: 0.45 },
+  'MA': { eps: 13.5, bps: 15.0, div: 2.64, grow: 15, debt: 110, beta: 1.00, gpa: 0.48 },
+  'PG': { eps: 6.5, bps: 20.0, div: 3.84, grow: 6, debt: 80, beta: 0.45, gpa: 0.28 },
+  'XOM': { eps: 9.5, bps: 58.0, div: 3.80, grow: 4, debt: 20, beta: 1.10, gpa: 0.15 },
+  'JNJ': { eps: 10.0, bps: 32.0, div: 4.80, grow: 5, debt: 45, beta: 0.55, gpa: 0.26 },
+  'HD': { eps: 15.2, bps: 8.5, div: 9.00, grow: 7, debt: 220, beta: 0.95, gpa: 0.38 },
+  'COST': { eps: 16.0, bps: 55.0, div: 4.60, grow: 10, debt: 35, beta: 0.78, gpa: 0.16 },
+  'ABBV': { eps: 11.2, bps: 8.0, div: 6.20, grow: 6, debt: 350, beta: 0.58, gpa: 0.28 },
+  'AMD': { eps: 3.5, bps: 38.0, div: 0.00, grow: 28, debt: 10, beta: 1.70, gpa: 0.28 },
+  'NFLX': { eps: 18.5, bps: 52.0, div: 0.00, grow: 22, debt: 60, beta: 1.20, gpa: 0.38 },
+  'ADBE': { eps: 17.8, bps: 45.0, div: 0.00, grow: 12, debt: 30, beta: 1.12, gpa: 0.44 },
+  'CRM': { eps: 9.8, bps: 62.0, div: 1.60, grow: 15, debt: 25, beta: 1.10, gpa: 0.30 },
+  'CSCO': { eps: 3.8, bps: 11.5, div: 1.60, grow: 5, debt: 50, beta: 0.80, gpa: 0.35 },
+  'INTC': { eps: 0.8, bps: 25.0, div: 0.50, grow: 12, debt: 45, beta: 1.15, gpa: 0.12 },
+  'QCOM': { eps: 10.2, bps: 22.0, div: 3.40, grow: 10, debt: 70, beta: 1.20, gpa: 0.41 },
+  'TXN': { eps: 7.2, bps: 18.5, div: 5.20, grow: 8, debt: 55, beta: 0.95, gpa: 0.36 },
+  'ORCL': { eps: 5.8, bps: 8.2, div: 1.60, grow: 12, debt: 340, beta: 1.00, gpa: 0.32 },
+  'NKE': { eps: 3.85, bps: 9.2, div: 1.48, grow: 9, debt: 65, beta: 1.05, gpa: 0.35 },
+  'KO': { eps: 2.85, bps: 6.2, div: 1.92, grow: 5, debt: 110, beta: 0.50, gpa: 0.28 },
+  'PEP': { eps: 8.2, bps: 15.5, div: 5.06, grow: 6, debt: 180, beta: 0.55, gpa: 0.27 },
+  'DIS': { eps: 4.8, bps: 58.0, div: 0.90, grow: 10, debt: 48, beta: 1.10, gpa: 0.14 },
+  'WMT': { eps: 2.4, bps: 10.5, div: 0.84, grow: 7, debt: 65, beta: 0.50, gpa: 0.22 },
+  'BAC': { eps: 3.2, bps: 34.5, div: 0.96, grow: 5, debt: 120, beta: 1.15, gpa: 0.03 },
+  'MRK': { eps: 6.8, bps: 28.0, div: 3.08, grow: 6, debt: 75, beta: 0.40, gpa: 0.22 },
+  'PFE': { eps: 2.2, bps: 16.5, div: 1.68, grow: -5, debt: 85, beta: 0.65, gpa: 0.16 },
+  'MCD': { eps: 11.8, bps: -12.0, div: 6.68, grow: 6, debt: 450, beta: 0.68, gpa: 0.40 },
+  'NVO': { eps: 2.7, bps: 4.8, div: 0.95, grow: 25, debt: 15, beta: 0.75, gpa: 0.42 },
+  'ASML': { eps: 22.5, bps: 48.0, div: 6.80, grow: 18, debt: 25, beta: 1.25, gpa: 0.38 }
 };
+
+// 💡 [실행 단위 캐싱] 동적 로딩된 펀더멘탈 DB
+var _quantFundamentalDbCache = null;
+
+/**
+ * 퀀트 펀더멘탈 DB를 동적으로 로딩하는 함수
+ * quant_universe_db 시트에 데이터가 있으면 시트에서 로딩, 없으면 정적 폴백 사용
+ * 결과는 동일 실행 내에서 메모리 캐싱됨
+ */
+function getQuantFundamentalDb_() {
+  if (_quantFundamentalDbCache) return _quantFundamentalDbCache;
+  
+  try {
+    var rows = readObjects_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB);
+    if (rows && rows.length > 0) {
+      var db = {};
+      rows.forEach(function(row) {
+        var sym = normalizeStockSymbol_(row.symbol);
+        if (!sym) return;
+        db[sym] = {
+          eps: parseFloat(row.eps || 0),
+          bps: parseFloat(row.bps || 0),
+          div: parseFloat(row.div_yield || row.div || 0),
+          grow: parseFloat(row.grow || row.momentum_pct || 10),
+          debt: parseFloat(row.debt || 100),
+          beta: parseFloat(row.beta || 1.0),
+          gpa: parseFloat(row.gpa || 0)
+        };
+      });
+      if (Object.keys(db).length > 0) {
+        logInfo_('quant_engine', 'Loaded fundamental DB from sheet', { count: Object.keys(db).length });
+        _quantFundamentalDbCache = db;
+        return db;
+      }
+    }
+  } catch(e) {
+    logWarn_('quant_engine', 'Failed to load fundamental DB from sheet, using static fallback', { error: e.message });
+  }
+  
+  // 시트 데이터 없음 — 정적 폴백 사용
+  _quantFundamentalDbCache = AM_QUANT_FUNDAMENTAL_DB_STATIC_;
+  return _quantFundamentalDbCache;
+}
+
+// 하위 호환성 유지: 기존 직접 참조를 유지하면서도 동적 로딩 함수 사용 유도
+var AM_QUANT_FUNDAMENTAL_DB = AM_QUANT_FUNDAMENTAL_DB_STATIC_;
 
 // 💡 퀀트 스크리닝용 국가별 타겟 유니버스 선언 (국내 60종 + 미국 40종 = 총 100종)
 var DOMESTIC_MARKET_UNIVERSE = [
@@ -741,7 +786,9 @@ function getQuantStockScoring(symbolsList, forceRealtime) {
     var isEtf = isEtf_(cleanSym, name);
     
     // EPS, BPS 기반 가격 연동 팩터 계산
-    var fund = AM_QUANT_FUNDAMENTAL_DB[cleanSym] || { eps: 0, bps: 0, div: 0, grow: 10, debt: 100, beta: 1.0, gpa: 0.0 };
+    // 💡 [동적 DB] 시트 데이터가 있으면 시트에서, 없으면 정적 폴백에서 로딩
+    var fundamentalDb = getQuantFundamentalDb_();
+    var fund = fundamentalDb[cleanSym] || { eps: 0, bps: 0, div: 0, grow: 10, debt: 100, beta: 1.0, gpa: 0.0 };
     var per = 0;
     var pbr = 0;
     var divYield = 0;
@@ -831,13 +878,22 @@ function getQuantStockScoring(symbolsList, forceRealtime) {
   var sortedGpa = scoredStocks.slice().sort(function(a, b) { return b.gpa_val - a.gpa_val; }); // GP/A는 높을수록 우수하므로 내림차순
   var sortedMom = scoredStocks.slice().sort(function(a, b) { return b.momentum_val - a.momentum_val; });
   
+  // 💡 [성능 최적화] indexOf O(n²) → Map 기반 O(n) 랭킹 룩업
   var size = scoredStocks.length;
+  var rankMap = {};
+  ['per', 'pbr', 'gpa', 'mom'].forEach(function(factor) {
+    rankMap[factor] = {};
+  });
+  sortedPer.forEach(function(s, i) { rankMap.per[s.symbol] = i; });
+  sortedPbr.forEach(function(s, i) { rankMap.pbr[s.symbol] = i; });
+  sortedGpa.forEach(function(s, i) { rankMap.gpa[s.symbol] = i; });
+  sortedMom.forEach(function(s, i) { rankMap.mom[s.symbol] = i; });
   
   scoredStocks.forEach(function(stock) {
-    var perRank = sortedPer.indexOf(stock);
-    var pbrRank = sortedPbr.indexOf(stock);
-    var gpaRank = sortedGpa.indexOf(stock);
-    var momRank = sortedMom.indexOf(stock);
+    var perRank = rankMap.per[stock.symbol] || 0;
+    var pbrRank = rankMap.pbr[stock.symbol] || 0;
+    var gpaRank = rankMap.gpa[stock.symbol] || 0;
+    var momRank = rankMap.mom[stock.symbol] || 0;
     
     // Value/Quality 3대 팩터 스코어링 (각각 0~100 스케일 변환 후 균등 결합)
     var valPerScore = (stock.per_val < 9999) ? ((size - 1 - perRank) / (size - 1 || 1) * 100) : 0;

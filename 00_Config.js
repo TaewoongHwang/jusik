@@ -39,9 +39,15 @@ var AM_CONFIG = {
     TELEGRAM_BOT_TOKEN: 'TELEGRAM_BOT_TOKEN',
     TELEGRAM_CHAT_ID: 'TELEGRAM_CHAT_ID',
     PORTFOLIO_MODE: 'PORTFOLIO_MODE',
-    ADMIN_TOKEN: 'ADMIN_TOKEN'
+    ADMIN_TOKEN: 'ADMIN_TOKEN',
+    API_AUTH_TOKEN: 'API_AUTH_TOKEN'
   }
 };
+
+// 💡 [보안] 런타임 변경 방지 — 전역 설정 객체 동결
+Object.freeze(AM_CONFIG);
+Object.freeze(AM_CONFIG.SHEETS);
+Object.freeze(AM_CONFIG.PROPERTY_KEYS);
 
 var AM_SHEET_SCHEMAS = {};
 AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.SETTINGS] = ['key', 'value', 'description', 'updated_at'];
@@ -72,4 +78,4 @@ AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.REAL_LEDGER] = [
 AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.LOGS] = ['timestamp', 'level', 'module', 'message', 'details'];
 AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.QUANT_SETTINGS] = ['key', 'value', 'description', 'updated_at'];
 AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.QUANT_SIGNALS] = ['date', 'strategy', 'signal', 'details', 'created_at'];
-AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB] = ['date', 'symbol', 'name', 'price', 'per', 'pbr', 'gpa', 'momentum_pct', 'rsi', 'roe', 'debt', 'div_yield', 'beta', 'peg', 'srim_price', 'safety_margin', 'updated_at'];
+AM_SHEET_SCHEMAS[AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB] = ['date', 'symbol', 'name', 'price', 'eps', 'bps', 'per', 'pbr', 'gpa', 'momentum_pct', 'rsi', 'roe', 'debt', 'div_yield', 'beta', 'peg', 'grow', 'srim_price', 'safety_margin', 'updated_at'];

@@ -15,7 +15,8 @@ const excludeFiles = [
   'syntax_checker.js',
   'test_merge_logic.js',
   'watch_and_test.js',
-  'install_git_hooks.js'
+  'install_git_hooks.js',
+  'sw.js'
 ];
 
 const files = fs.readdirSync(projectDir).filter(f => f.endsWith('.js') && !excludeFiles.includes(f) && !f.includes('backup'));
@@ -30,6 +31,27 @@ files.forEach(file => {
     syntaxError = true;
     console.error(`\x1b[31m❌ [문법 오류 발견] ${file} 파일에 신택스 에러가 존재합니다!\x1b[0m`);
     console.error(err.stack);
+  }
+});
+
+const htmlFiles = fs.readdirSync(projectDir).filter(f => f.endsWith('.html'));
+htmlFiles.forEach(file => {
+  const filePath = path.join(projectDir, file);
+  const html = fs.readFileSync(filePath, 'utf8');
+  const scriptRegex = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+  let match;
+  let scriptIndex = 0;
+  while ((match = scriptRegex.exec(html)) !== null) {
+    const code = match[1];
+    if (!code.trim()) continue;
+    scriptIndex += 1;
+    try {
+      new vm.Script(code, { filename: `${file}#inline-script-${scriptIndex}` });
+    } catch (err) {
+      syntaxError = true;
+      console.error(`\x1b[31m❌ [HTML 스크립트 문법 오류] ${file} 인라인 스크립트 ${scriptIndex}\x1b[0m`);
+      console.error(err.stack);
+    }
   }
 });
 
@@ -203,8 +225,15 @@ const LockServiceMock = {
   })
 };
 
+const HtmlServiceMock = {
+  createHtmlOutput: (contents) => ({
+    getContentText: () => contents
+  })
+};
+
 // 샌드박스 콘텍스트 생성
 const sandbox = {
+  HtmlService: HtmlServiceMock,
   console: console,
   SpreadsheetApp: SpreadsheetAppMock,
   PropertiesService: PropertiesServiceMock,
@@ -379,6 +408,111 @@ try {
   });
   console.log("   [PASS] [단위테스트 8] 계좌번호 및 상품코드 스마트 정제 엔진(Sanitizer) 검증 완료");
 
+  // [단위테스트 9] 화면 모드가 REAL이어도 강제 MOCK 실행 모드가 주문 계층까지 전달되는지 검증
+  const originalExecuteMockOrder = sandbox.executeMockOrder_;
+  let forcedMockCall = null;
+  sandbox.executeMockOrder_ = function(symbol, actionType, qty, customPrice, isAutoRebal) {
+    forcedMockCall = { symbol, actionType, qty, customPrice, isAutoRebal };
+    return { success: true, orderNo: 'MOCK-ORDER' };
+  };
+  const forcedMockResult = sandbox.executePaperOrder_('SPY', 'BUY', 2, 0, true, 'mock');
+  sandbox.executeMockOrder_ = originalExecuteMockOrder;
+  if (!forcedMockResult.success || !forcedMockCall || forcedMockCall.symbol !== 'SPY' || forcedMockCall.isAutoRebal !== true) {
+    throw new Error('Forced MOCK execution mode was not propagated to the order layer.');
+  }
+  console.log("   [PASS] [단위테스트 9] 강제 MOCK 주문 모드 전달 및 REAL 화면 모드 격리 검증 완료");
+
+  // [단위테스트 10] 모의 주문 취소 요청에 모의 계좌번호/상품코드가 포함되는지 검증
+  const originalKisPost = sandbox.kisPost_;
+  let cancelPayload = null;
+  sandbox.kisPost_ = function(path, payload) {
+    cancelPayload = payload;
+    return { rt_cd: '0', output: { ODNO: 'CANCEL-ORDER' }, msg1: 'OK' };
+  };
+  const cancelResult = sandbox.cancelOrModifyDomesticOrder_(
+    '12345',
+    '12345',
+    '02',
+    1,
+    0,
+    {
+      appKey: 'MOCK_KEY',
+      appSecret: 'MOCK_SECRET',
+      baseUrl: 'https://openapivts.koreainvestment.com:29443',
+      cano: '87654321',
+      productCode: '03'
+    }
+  );
+  sandbox.kisPost_ = originalKisPost;
+  if (!cancelResult.success || !cancelPayload || cancelPayload.CANO !== '87654321' || cancelPayload.ACNT_PRDT_CD !== '03') {
+    throw new Error('Mock cancellation account routing failed: ' + JSON.stringify(cancelPayload));
+  }
+  console.log("   [PASS] [단위테스트 10] 워치독 모의계좌 취소 라우팅 검증 완료");
+
+  // [단위테스트 11] 워치독이 실계좌 주문을 절대 조회/취소하지 않는지 검증
+  let realOrderTouched = false;
+  const originalGetAccount = sandbox.getKisAccountConfig_;
+  const originalFetchDomesticNccld = sandbox.fetchKisDomesticNccldOrders_;
+  sandbox.getKisAccountConfig_ = function() {
+    return { cano: 'REAL', accountProductCode: '01', mockCano: 'MOCK', mockProductCode: '01' };
+  };
+  sandbox.fetchKisDomesticNccldOrders_ = function() {
+    realOrderTouched = true;
+    return [];
+  };
+  sandbox.checkAndResolveUnfilledOrders([{
+    symbol: '005930',
+    name: '테스트',
+    action_type: 'BUY',
+    order_no: 'REAL-ORDER',
+    quantity: 1,
+    is_mock: false
+  }]);
+  sandbox.getKisAccountConfig_ = originalGetAccount;
+  sandbox.fetchKisDomesticNccldOrders_ = originalFetchDomesticNccld;
+  if (realOrderTouched) {
+    throw new Error('Watchdog attempted to access a REAL account order.');
+  }
+  console.log("   [PASS] [단위테스트 11] 워치독 실계좌 주문 차단 검증 완료");
+
+  // [단위테스트 12] 공개 대시보드 쓰기 API가 ADMIN_TOKEN 없이는 실행되지 않는지 검증
+  let unauthorizedWriteBlocked = false;
+  try {
+    sandbox.toggleInvestmentModeFromWeb('MOCK', 'WRONG_TOKEN');
+  } catch (e) {
+    unauthorizedWriteBlocked = true;
+  }
+  if (!unauthorizedWriteBlocked) {
+    throw new Error('Dashboard write API accepted an invalid ADMIN_TOKEN.');
+  }
+  const authorizedModeChange = sandbox.toggleInvestmentModeFromWeb('MOCK', 'MOCK_VAL');
+  if (!authorizedModeChange || authorizedModeChange.mode !== 'MOCK') {
+    throw new Error('Dashboard write API rejected the configured ADMIN_TOKEN.');
+  }
+  console.log("   [PASS] [단위테스트 12] 대시보드 쓰기 API 관리자 토큰 차단 검증 완료");
+
+    // [단위테스트 13] 텔레그램 실시간 웹훅 doPost(e) 토큰 보안 제어 검증
+  let webhookEventProcessed = false;
+  const originalProcessUpdate = sandbox.processTelegramUpdateEvent_;
+  sandbox.processTelegramUpdateEvent_ = function(e) {
+    webhookEventProcessed = true;
+    return { getResponseCode: () => 200, getContentText: () => 'OK' };
+  };
+  
+  // 1) 인증 토큰이 없을 때 차단되는지 검증
+  const res1 = sandbox.doPost({ parameter: { token: 'WRONG_TOKEN' }, postData: { contents: '{}' } });
+  if (res1.getContentText() !== 'Unauthorized' || webhookEventProcessed) {
+    throw new Error('Telegram webhook accepted a request with invalid token.');
+  }
+  
+  // 2) 올바른 인증 토큰을 제공했을 때 작동하는지 검증
+  const res2 = sandbox.doPost({ parameter: { token: 'MOCK_VAL' }, postData: { contents: '{}' } });
+  sandbox.processTelegramUpdateEvent_ = originalProcessUpdate;
+  if (!webhookEventProcessed) {
+    throw new Error('Telegram webhook rejected a valid token.');
+  }
+  console.log("   [PASS] [단위테스트 13] 텔레그램 실시간 웹훅 doPost(e) 토큰 보안 검증 완료");
+
   console.log("\x1b[32m✅ [합격] 모든 핵심 로직 유닛 테스트가 100% 정상 작동합니다!\x1b[0m");
 } catch (ex) {
   console.error("\x1b[31m❌ [유닛 테스트 실패] 동적 테스트 검증 중 오류가 감지되었습니다!\x1b[0m");
@@ -396,8 +530,8 @@ console.log("🚀 [3단계] 자동 클라우드 빌드 및 실시간 안전 배�
 console.log("==================================================");
 
 try {
-  console.log("📤 서버 최신화 (npx clasp push) 전송 중...");
-  const pushOut = execSync('npx clasp push', { encoding: 'utf8' });
+  console.log("📤 서버 최신화 (npx clasp push -f) 전송 중...");
+  const pushOut = execSync('npx clasp push -f', { encoding: 'utf8' });
   console.log(pushOut);
   console.log("   [성공] clasp push 완료!");
 

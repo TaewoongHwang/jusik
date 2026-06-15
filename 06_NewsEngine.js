@@ -90,7 +90,8 @@ function fetchLiveFinancialNews_() {
         description: cleanDesc || "기사 상세 보고는 원문 상세 링크에서 무결하게 조회하실 수 있습니다.",
         source: source,
         is_mock: false,
-        fetched_at: amNowString_()
+        fetched_at: amNowString_(),
+        timestamp: (d && !isNaN(d.getTime())) ? d.getTime() : Date.now()
       });
       count++;
     }
@@ -114,6 +115,7 @@ function fetchLiveFinancialNews_() {
  */
 function getFallbackNews_() {
   var nowStr = amNowString_();
+  var nowMs = Date.now();
   var warnStr = '실시간 뉴스 RSS 수신 장애 또는 주말/휴일 등으로 인해 예시(Mock) 뉴스를 반환합니다.';
   return [
     { 
@@ -124,7 +126,8 @@ function getFallbackNews_() {
       source: "글로벌마켓",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs
     },
     { 
       title: "미 연준(FED) 금리 피벗 연내 단행 기대감 고조... 글로벌 증시 안도 기류", 
@@ -134,7 +137,8 @@ function getFallbackNews_() {
       source: "글로벌매크로",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 5 * 60000
     },
     { 
       title: "HBM3E 퀄테스트 통과 임박... 반도체 소부장 밸류체인 연일 신고가 경신", 
@@ -144,17 +148,19 @@ function getFallbackNews_() {
       source: "산업특보",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 10 * 60000
     },
     { 
       title: "글로벌 전력 인프라 쇼크... AI 데이터센터 변압기 수혜주 공급 계약 폭증", 
       link: "https://news.google.com/search?q=데이터센터+변압기", 
       pubDate: "15분 전", 
-      description: "빅테크 기업들의 초대형 데이터센터 신축 열풍으로 인해 초고압 변압기 및 전기 구리 원자재 수요가 기하급수적으로 팽창하고 있습니다...", 
+      description: "빅테크 기업들의 초대형 데이터센터 신축열풍으로 인해 초고압 변압기 및 전기 구리 원자재 수요가 기하급수적으로 팽창하고 있습니다...", 
       source: "에너지인프라",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 15 * 60000
     },
     { 
       title: "테슬라(Tesla) 완전자율주행 FSD 라이센스 승인... 글로벌 로보택시 훈풍", 
@@ -164,7 +170,8 @@ function getFallbackNews_() {
       source: "모빌리티",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 25 * 60000
     },
     { 
       title: "원/달러 환율, 매크로 리스크 감소 속 1340원선 하향 안착 성공", 
@@ -174,7 +181,8 @@ function getFallbackNews_() {
       source: "외환시장",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 35 * 60000
     },
     { 
       title: "코스피, 외국인·기관 쌍끌이 대규모 수급 유입에 2750선 돌파 안착", 
@@ -184,7 +192,8 @@ function getFallbackNews_() {
       source: "마켓시황",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 45 * 60000
     },
     { 
       title: "국제유가, 중동 리스크 소폭 진정 속 WTI 배럴당 78달러선으로 하향 조율", 
@@ -194,7 +203,8 @@ function getFallbackNews_() {
       source: "원자재동향",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 50 * 60000
     },
     { 
       title: "구글·애플 온디바이스 AI 탑재 스마트폰 가시화... OLED 부품사 낙수효과", 
@@ -204,7 +214,8 @@ function getFallbackNews_() {
       source: "IT기기특보",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 60 * 60000
     },
     { 
       title: "코스닥, 테크 섹터 주도로 900선 정밀 안착 랠리 본궤도 진입", 
@@ -214,7 +225,8 @@ function getFallbackNews_() {
       source: "코스닥전망",
       is_mock: true,
       fetched_at: nowStr,
-      warning: warnStr
+      warning: warnStr,
+      timestamp: nowMs - 70 * 60000
     }
   ];
 }

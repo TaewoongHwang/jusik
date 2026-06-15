@@ -3,6 +3,16 @@
 // ==================================================
 
 function sendTelegramMessage(text, replyMarkup) {
+  // ★ [개선된 중복 방지] 텍스트의 MD5 해시를 캐시 키로 사용하여 시간 경계 문제 해결
+  var dedupCache = CacheService.getScriptCache();
+  var textHash = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, text || '')
+    .map(function(b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+  var dedupKey = 'tg_dedup_' + textHash;
+  if (dedupCache.get(dedupKey)) {
+    // 동일 메시지가 120초 이내에 이미 전송됨 – 중복 발송 차단
+    return { skipped: true };
+  }
+  dedupCache.put(dedupKey, '1', 120); // 120초 동안 동일 메시지 차단
   var token = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.TELEGRAM_BOT_TOKEN);
   var chatId = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.TELEGRAM_CHAT_ID);
   var url = 'https://api.telegram.org/bot' + token + '/sendMessage';
@@ -68,10 +78,25 @@ function setTelegramCommands() {
 
 
 // ==================================================
-// 🚀 텔레그램 챗봇 명령어 수신 라우터 (Webhook WebAPI)
+// 🚀 텔레그램 챗봇 명령어 수신 라우터
 // ==================================================
 
 function doPost(e) {
+  try {
+    var adminToken = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.ADMIN_TOKEN, '');
+    var requestToken = e && e.parameter && e.parameter.token;
+    if (!adminToken || requestToken !== adminToken) {
+      logWarn_('telegram_security', 'Unauthorized webhook POST access blocked', { token: requestToken });
+      return HtmlService.createHtmlOutput('Unauthorized');
+    }
+    return processTelegramUpdateEvent_(e);
+  } catch(err) {
+    logWarn_('telegram_webhook', 'Fatal Webhook execution error', { error: err.message });
+    return HtmlService.createHtmlOutput('Error: ' + err.message);
+  }
+}
+
+function processTelegramUpdateEvent_(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
       return HtmlService.createHtmlOutput('No post data');
@@ -98,6 +123,10 @@ function doPost(e) {
       text = '/quant';
     } else if (text.indexOf('🛠️ 자동화 트리거 설치') >= 0 || text === '설치' || text === '인스톨') {
       text = '/install_triggers';
+    } else if (text === '자동매매' || text === '자동투자') {
+      text = '/run_auto';
+    } else if (text === '자동매매등록' || text === '자동등록') {
+      text = '/install_auto';
     }
     
     // 타인의 무단 접근 방어 차단선
@@ -145,7 +174,9 @@ function doPost(e) {
         '• <code>/ai [종목코드]</code> : Gemini 1.5 기반 실시간 자문 리포트 생성',
         '• <code>/macro</code> 또는 <code>/리포트</code> : 12대 API 융합 거시경제 & AI 자산 리포트 조회',
         '• <code>/quant</code> 또는 <code>/퀀트</code> : 실시간 VAA 자산배분 신호 및 주식 퀀트 랭킹 조회',
-        '• <code>/install</code> 또는 <code>/install_triggers</code> : 장전/장후 AI 리포트 자동화 스케줄러 설치'
+        '• <code>/install</code> 또는 <code>/install_triggers</code> : 장전/장후 AI 리포트 자동화 스케줄러 설치',
+        '• <code>/run_auto</code> 또는 <code>/자동매매</code> : 실시간 VAA 자동투자 매매 루틴 즉시 실행',
+        '• <code>/install_auto</code> 또는 <code>/자동매매등록</code> : 매일 09:10 자동매매 데일리 스케줄러 등록'
       ].join('\n');
       
       var webAppUrl = getWebAppUrl_();
@@ -620,12 +651,150 @@ function doPost(e) {
         sendTelegramMessage('❌ 퀀트 분석 수행 중 치명적인 오류가 발생했습니다: ' + ex.message);
       }
     }
+    else if (command === '/run_auto' || command === '/자동매매') {
+      sendTelegramMessage('🤖 실시간 VAA 시그널 감지 및 자동투자(Auto-Trading) 루틴을 실행하고 있습니다...');
+      try {
+        executeAutoTradingRoutine();
+      } catch(ex) {
+        logWarn_('telegram_bot', 'Auto trading command failed', { error: ex.message });
+        sendTelegramMessage('❌ 자동매매 실행 도중 치명적인 오류가 발생했습니다: ' + ex.message);
+      }
+    }
+    else if (command === '/install_auto' || command === '/자동매매등록') {
+      sendTelegramMessage('⚙️ 매일 오전 09:10 자동투자 시간 기반 트리거 설정을 진행하고 있습니다...');
+      try {
+        var res = setupDailyAutoTradingTrigger();
+        if (res.success) {
+          sendTelegramMessage('✅ ' + res.message);
+        } else {
+          sendTelegramMessage('❌ 자동투자 트리거 설정 실패: ' + res.message);
+        }
+      } catch(ex) {
+        logWarn_('telegram_bot', 'Install auto trigger command failed', { error: ex.message });
+        sendTelegramMessage('❌ 트리거 설정 도중 치명적인 오류가 발생했습니다: ' + ex.message);
+      }
+    }
     
     return HtmlService.createHtmlOutput('OK');
   } catch(err) {
-    logWarn_('telegram_webhook', 'Fatal webhook execution error', { error: err.message });
+    logWarn_('telegram_polling', 'Fatal Telegram update execution error', { error: err.message });
     return HtmlService.createHtmlOutput('Error: ' + err.message);
   }
+}
+
+function fetchTelegramUpdates_(offset) {
+  var token = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.TELEGRAM_BOT_TOKEN);
+  var url = 'https://api.telegram.org/bot' + token + '/getUpdates';
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      offset: Number(offset || 0),
+      limit: 5,
+      timeout: 0,
+      allowed_updates: ['message']
+    }),
+    muteHttpExceptions: true
+  });
+  var json = JSON.parse(response.getContentText());
+  if (response.getResponseCode() !== 200 || !json.ok) {
+    throw new Error('Telegram getUpdates failed: ' + (json.description || response.getContentText()));
+  }
+  return json.result || [];
+}
+
+function pollTelegramUpdates() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    logInfo_('telegram_polling', 'Skipped overlapping Telegram polling execution.');
+    return { success: true, skipped: true };
+  }
+  var updates = [];
+  var offset = 0;
+  try {
+    var offsetKey = 'TELEGRAM_UPDATE_OFFSET';
+    offset = Number(getScriptProperty_(offsetKey, 0));
+    if (!isFinite(offset) || offset < 0) offset = 0;
+
+    updates = fetchTelegramUpdates_(offset);
+    updates.forEach(function(update) {
+      if (!update || update.update_id === undefined || update.update_id === null) return;
+      offset = Math.max(offset, Number(update.update_id) + 1);
+    });
+    setScriptProperty_(offsetKey, String(offset));
+  } catch(e) {
+    logWarn_('telegram_polling', 'Telegram polling failed', { error: e.message });
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+
+  var processed = 0;
+  updates.forEach(function(update) {
+    if (!update || update.update_id === undefined || update.update_id === null) return;
+    processTelegramUpdateEvent_({
+      postData: {
+        contents: JSON.stringify(update)
+      }
+    });
+    processed += 1;
+  });
+  return { success: true, processed: processed, next_offset: offset };
+}
+
+function deleteTelegramWebhook_() {
+  var token = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.TELEGRAM_BOT_TOKEN);
+  var url = 'https://api.telegram.org/bot' + token + '/deleteWebhook';
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ drop_pending_updates: true }),
+    muteHttpExceptions: true
+  });
+  var json = JSON.parse(response.getContentText());
+  if (response.getResponseCode() !== 200 || !json.ok) {
+    throw new Error('Telegram deleteWebhook failed: ' + (json.description || response.getContentText()));
+  }
+  return json;
+}
+
+function installTelegramWebhook() {
+  var token = getRequiredScriptProperty_(AM_CONFIG.PROPERTY_KEYS.TELEGRAM_BOT_TOKEN);
+  var webAppUrl = getWebAppUrl_();
+  if (!webAppUrl) {
+    throw new Error('웹앱 배포 URL(WEB_APP_URL)이 스크립트 속성에 등록되지 않았습니다.');
+  }
+  
+  var adminToken = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.ADMIN_TOKEN, '');
+  if (!adminToken) {
+    throw new Error('ADMIN_TOKEN이 설정되어 있지 않습니다.');
+  }
+  
+  // 1분 폴링 트리거 정리
+  deleteTriggersByHandler_('pollTelegramUpdates');
+  deleteScriptProperty_('TELEGRAM_UPDATE_OFFSET');
+  
+  var webhookUrl = webAppUrl + '?token=' + encodeURIComponent(adminToken);
+  
+  var url = 'https://api.telegram.org/bot' + token + '/setWebhook';
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      url: webhookUrl,
+      drop_pending_updates: true,
+      allowed_updates: ['message']
+    }),
+    muteHttpExceptions: true
+  });
+  
+  var json = JSON.parse(response.getContentText());
+  if (response.getResponseCode() !== 200 || !json.ok) {
+    throw new Error('Telegram setWebhook failed: ' + (json.description || response.getContentText()));
+  }
+  
+  logInfo_('telegram_webhook', 'Installed Telegram Webhook with token verification.', { url: webhookUrl });
+  return { success: true, message: '텔레그램 실시간 웹훅(?token=인증 포함) 설치가 성공적으로 완료되었습니다.' };
 }
 
 // ==================================================
@@ -995,53 +1164,10 @@ function escapeTelegramHtml_(text) {
 function doGet(e) {
   var action = e && e.parameter && e.parameter.action;
   
-  // 🚀 [신설] 프론트엔드-백엔드 분리 배포용 REST API 동적 게이트웨이 (action=api_call)
+  // 외부 REST 실행은 폐쇄하고 Apps Script 내부 google.script.run만 허용한다.
   if (action === 'api_call') {
-    var funcName = e.parameter.func;
-    var args = [];
-    if (e.parameter.args) {
-      try {
-        args = JSON.parse(e.parameter.args);
-      } catch(argErr) {
-        return ContentService.createTextOutput(JSON.stringify({ error: 'Args parsing failed: ' + argErr.message }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-    }
-    
-    // 외부 클라이언트로부터 원격 실행이 허용되는 안전한 화이트리스트 백엔드 함수 정의
-    var allowedFunctions = [
-      'getPortfolioDataForWeb',
-      'getPaperLedgerDataForWeb',
-      'getStockNewsForWeb',
-      'getVaaStrategySignal',
-      'getQuantStockScoring',
-      'getQuantLabDataForWeb',
-      'getSystemDiagnosticsForWeb',
-      'getAiPortfolioAdviceForWeb',
-      'testMockApiForWeb',
-      'testQuantDbForWeb',
-      'testPremarketAiForWeb',
-      'testPremarketReportTrigger',
-      'updateHoldingFromWeb',
-      'toggleInvestmentModeFromWeb',
-      'callGeminiStockAnalysis_'
-    ];
-    
-    if (allowedFunctions.indexOf(funcName) < 0) {
-      return ContentService.createTextOutput(JSON.stringify({ error: 'Unauthorized function call: ' + funcName }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    
-    try {
-      // Apps Script 전역 컨텍스트에서 지정 함수 동적 실행
-      var result = this[funcName].apply(this, args);
-      return ContentService.createTextOutput(JSON.stringify({ success: true, result: result }))
-        .setMimeType(ContentService.MimeType.JSON);
-    } catch(callErr) {
-      logWarn_('api_gateway_error', 'Dynamic API call failed for ' + funcName, { error: callErr.message });
-      return ContentService.createTextOutput(JSON.stringify({ error: 'Execution failed: ' + callErr.message }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
+    return ContentService.createTextOutput(JSON.stringify({ error: 'External REST API is disabled.' }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
   
 
@@ -1320,6 +1446,7 @@ function doGet(e) {
   
   return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('JUSIK AI Portfolio')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
 }
 
@@ -1566,7 +1693,7 @@ function getPortfolioDataForWeb(forceRefresh) {
   
   var percentChange = (totalPurchase - totalCash) > 0 ? ((totalEval - totalPurchase) / (totalPurchase - totalCash) * 100) : 0;
   
-  return {
+  var payload = {
     totalAsset: Math.round(totalEval),
     totalPurchase: Math.round(totalPurchase),
     totalProfitLoss: Math.round(totalEval - totalPurchase),
@@ -1576,9 +1703,29 @@ function getPortfolioDataForWeb(forceRefresh) {
     totalRealizedPl: Math.round(totalRealizedPl), // 누적 실현 수익금 추가
     assets: assets
   };
+
+  // 🚀 [신설] Firebase Firestore 실시간 캐시 동기화 실행
+  try {
+    syncPortfolioToFirestore_(payload);
+  } catch(fsErr) {
+    logWarn_('portfolio_api', 'Firebase Firestore sync failed', { error: fsErr.message });
+  }
+
+  return payload;
 }
 
-function updateHoldingFromWeb(broker, symbol, qty, price, isActive) {
+function requireWebAdminToken_(providedToken) {
+  var configuredToken = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.ADMIN_TOKEN, '');
+  if (!configuredToken) {
+    throw new Error('ADMIN_TOKEN이 설정되지 않아 대시보드 쓰기 작업을 차단했습니다.');
+  }
+  if (String(providedToken || '') !== String(configuredToken)) {
+    throw new Error('관리자 인증 토큰이 올바르지 않습니다.');
+  }
+}
+
+function updateHoldingFromWeb(broker, symbol, qty, price, isActive, adminToken) {
+  requireWebAdminToken_(adminToken);
   var targetQty = parseFloat(qty || 0);
   var targetPrice = parseFloat(price || 0);
   var cleanSym = normalizeStockSymbol_(symbol);
@@ -1633,7 +1780,8 @@ function getStockNewsForWeb(forceRefresh) {
   }
 }
 
-function toggleInvestmentModeFromWeb(mode) {
+function toggleInvestmentModeFromWeb(mode, adminToken) {
+  requireWebAdminToken_(adminToken);
   var targetMode = (mode === 'REAL') ? 'REAL' : 'MOCK';
   setScriptProperty_('PORTFOLIO_MODE', targetMode);
   updateSettingValueInSheet_('PORTFOLIO_MODE', targetMode);
@@ -1720,27 +1868,29 @@ function runDiagnostics_() {
     report.diagnostics.telegram_bot = { status: "FAIL", error: te.message };
   }
   
-  // 3. 텔레그램 웹훅 정렬 & 최신화 자가 치유 (Self-healing Webhook Alignment)
+    // 3. 텔레그램 실시간 웹훅 정렬 및 동기화 상태 진단
   try {
-    // 🚀 [구글 API 404 우회 차단벽] getUrl()의 404 오작동 및 시트 낡은 데이터 오염을 방어하기 위해 검증된 신규 릴리즈 웹앱 주소로 웹훅 대상을 강제 고정
-    var webAppUrl = 'https://script.google.com/macros/s/AKfycbzNBBpzQDGet6ccuIE8EF72D1R61MS4qkdKxnw2lvoBs3radRiBnsiFy5I1zUWCl5hGCg/exec';
+    var webAppUrl = getWebAppUrl_();
+    var adminToken = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.ADMIN_TOKEN, '');
+    var expectedHookUrl = webAppUrl ? (webAppUrl + '?token=' + encodeURIComponent(adminToken)) : '';
+    
     var hookUrl = 'https://api.telegram.org/bot' + token + '/getWebhookInfo';
     var hookResponse = UrlFetchApp.fetch(hookUrl, { muteHttpExceptions: true });
     var hookJson = JSON.parse(hookResponse.getContentText());
     
     if (hookJson.ok) {
       var currentHookUrl = hookJson.result.url || "";
-      var aligned = (currentHookUrl === webAppUrl);
+      var aligned = (currentHookUrl === expectedHookUrl);
       var healingPerformed = false;
       
-      if (!aligned && webAppUrl) {
-        var setHookUrl = 'https://api.telegram.org/bot' + token + '/setWebhook?url=' + encodeURIComponent(webAppUrl);
-        var setHookResponse = UrlFetchApp.fetch(setHookUrl, { muteHttpExceptions: true });
-        var setHookJson = JSON.parse(setHookResponse.getContentText());
-        if (setHookJson.ok) {
-          healingPerformed = true;
+      if (!aligned && expectedHookUrl) {
+        try {
+          installTelegramWebhook();
           aligned = true;
-          currentHookUrl = webAppUrl;
+          healingPerformed = true;
+          currentHookUrl = expectedHookUrl;
+        } catch(wErr) {
+          logWarn_('telegram_bot', 'Auto webhook alignment failed', { error: wErr.message });
         }
       }
       
@@ -1923,6 +2073,12 @@ function getDartCorpCode_(stockCode) {
   
   var cleanSymbol = normalizeStockSymbol_(stockCode);
   
+  // 💡 [성능 캐싱] 기업코드 조회 결과를 24시간 캐싱하여 매번 XML 다운로드 방지
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'DART_CORP_' + cleanSymbol;
+  var cached = cache.get(cacheKey);
+  if (cached) return cached;
+  
   try {
     var url = 'https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=' + encodeURIComponent(apiKey);
     var response = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
@@ -1939,7 +2095,10 @@ function getDartCorpCode_(stockCode) {
       var block = match[1];
       var blockStockCode = extractXmlText_(block, 'stock_code');
       if (normalizeStockSymbol_(blockStockCode) === cleanSymbol) {
-        return extractXmlText_(block, 'corp_code');
+        var corpCode = extractXmlText_(block, 'corp_code');
+        // 24시간(86400초) 캐싱
+        cache.put(cacheKey, corpCode, 86400);
+        return corpCode;
       }
     }
   } catch(e) {
@@ -2418,11 +2577,13 @@ function runDailyClosePaperTradingReport() {
 function pruneLegacyTriggers_() {
   try {
     var triggers = ScriptApp.getProjectTriggers();
-    var allowedHandlers = [
+        var allowedHandlers = [
       'runPremarketAiReport',
       'runDailyClosePaperTradingReport',
       'updateQuantUniverseDatabase',
-      'runMonthlyQuantRebalancing'
+      'runMonthlyQuantRebalancing',
+      'executeAutoTradingRoutine',
+      'runOnceOffWatchdogTrigger'
     ];
     
     triggers.forEach(function(t) {
@@ -2446,6 +2607,7 @@ function installAutomationTriggers() {
   deleteTriggersByHandler_('runPremarketAiReport');
   deleteTriggersByHandler_('runDailyClosePaperTradingReport');
   deleteTriggersByHandler_('updateQuantUniverseDatabase');
+  deleteTriggersByHandler_('pollTelegramUpdates');
   
   ScriptApp.newTrigger('runPremarketAiReport')
     .timeBased()
@@ -2467,8 +2629,14 @@ function installAutomationTriggers() {
     .atHour(3)
     .nearMinute(20)
     .create();
+
+  try {
+    installTelegramWebhook();
+  } catch(webErr) {
+    logWarn_('triggers', 'Failed to auto-install Telegram Webhook during installAutomationTriggers', { error: webErr.message });
+  }
     
-  logInfo_('triggers', 'Successfully installed 3 JUSIK AI 2.0 Core Automation Triggers', {});
+  logInfo_('triggers', 'Successfully installed core automation triggers and Telegram webhook', {});
 }
 
 function deleteTriggersByHandler_(handlerFunctionName) {
@@ -2695,381 +2863,15 @@ function getQuantLabDataForWeb(forceRefresh) {
   return getQuantLabDataForWebUnified_(forceRefresh);
 }
 
-function getQuantLabDataForWeb_OLD(forceRefresh) {
-  var cacheKey = 'QUANT_LAB_WEB_DATA_V3';
-  var cache = CacheService.getScriptCache();
-  var force = (forceRefresh === true || forceRefresh === 'true');
-  
-  // 🚀 [이중 캐시 레이어] 강제 리프레시가 아니며 메모리 캐시 적중 시 0.05초 초고속 즉시 반환
-  if (!force) {
-    try {
-      var cached = cache.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
-      }
-    } catch(e) {
-      logWarn_('quant_web_api', 'Failed to read quant memory cache', { error: e.message });
-    }
-  }
-
-  try {
-    // 🚀 [시트 보증 스킵] 런타임 지연을 유발하는 ensureAllSheets_() 호출 전격 생략
-    // ensureAllSheets_();
-    
-    // VAA 자산배분 계산 시 캐싱(false)을 활용하여 초고속 반환 처리
-    var vaa = getVaaStrategySignal(false);
-    
-    var holdingsAll = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT);
-    var portMode = String(getScriptProperty_('PORTFOLIO_MODE', 'REAL')).toUpperCase();
-    var holdings = filterHoldingsByMode_(holdingsAll, portMode);
-    var today = amTodayString_();
-    var uniqueSymbols = {};
-    holdings.forEach(function(h) {
-      var sym = normalizeStockSymbol_(h.symbol);
-      if (sym && sym !== 'CASH' && normalizeDateValue_(h.date) === today) {
-        uniqueSymbols[sym] = h.name || true;
-      }
-    });
-    var portfolioSymbols = Object.keys(uniqueSymbols);
-    
-    // 1. [DB 캐시 조회] quant_universe_db 데이터 긁어오기 (덮어쓰기 정책으로 항시 50여 행 유지되어 초고속 조회)
-    var dbRows = readObjects_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB) || [];
-    
-    // 최근 기록 날짜 찾기
-    var latestDate = '';
-    if (dbRows.length > 0) {
-      var dates = dbRows.map(function(r) { return String(r.date || ''); }).filter(Boolean);
-      dates.sort();
-      if (dates.length > 0) {
-        latestDate = dates[dates.length - 1];
-      }
-    }
-    
-    var dbRowsFiltered = dbRows.filter(function(r) {
-      return String(r.date || '') === latestDate;
-    });
-    
-    var scoring = [];
-    var domesticScoring = [];
-    var usScoring = [];
-    
-    // DB 적재량이 부족하거나(최소 30개 미만) 최근 날짜가 전혀 없다면, 
-    // 40초 지연을 피하기 위해 실시간 연산 대신 즉시 로컬 Mock 팩터 데이터 조립 반환 (배치 구동 유도)
-    if (dbRowsFiltered.length < 30) {
-      logWarn_('quant_web_api', 'Quant database cache empty or insufficient (' + dbRowsFiltered.length + ' rows). Serving fast mock list to prevent 40s lag.');
-      
-      var unionMap = {};
-      portfolioSymbols.forEach(function(s) { unionMap[s] = true; });
-      DOMESTIC_MARKET_UNIVERSE.forEach(function(s) { unionMap[s] = true; });
-      US_MARKET_UNIVERSE.forEach(function(s) { unionMap[s] = true; });
-      var totalPool = Object.keys(unionMap);
-      
-      // 실시간 전체 50개 연산 대신, AM_QUANT_FUNDAMENTAL_DB와 현재가만을 조립한 0.5초 기산기 기동
-      var fastScoring = totalPool.map(function(sym) {
-        var cleanSym = normalizeStockSymbol_(sym);
-        var isDom = /^[0-9][A-Z0-9]{5}$/i.test(cleanSym);
-        
-        var priceData = null;
-        if (isDom) {
-          try { priceData = fetchKisCurrentPrice_(cleanSym); } catch(e) { priceData = fetchNaverStockPrice_(cleanSym); }
-        } else {
-          try { priceData = fetchKisOverseasCurrentPrice_(cleanSym); } catch(e) { priceData = fetchYahooOverseasCurrentPrice_(cleanSym); }
-        }
-        
-        var currentPrice = priceData ? parseFloat(priceData.close || 0) : 0;
-        var name = priceData ? String(priceData.name || cleanSym).trim() : cleanSym;
-        var existingName = (uniqueSymbols[cleanSym] && typeof uniqueSymbols[cleanSym] === 'string') ? uniqueSymbols[cleanSym] : null;
-        name = getStockKoreanName_(cleanSym, existingName || name);
-        
-        var fund = AM_QUANT_FUNDAMENTAL_DB[cleanSym] || { eps: 0, bps: 0, div: 0, grow: 10, debt: 100, beta: 1.0 };
-        var per = 0; var pbr = 0; var divYield = 0; var roe = 0;
-        
-        if (currentPrice > 0) {
-          if (fund.eps > 0) per = currentPrice / fund.eps;
-          if (fund.bps > 0) pbr = currentPrice / fund.bps;
-          if (fund.div > 0) divYield = (fund.div / currentPrice) * 100;
-        }
-        if (fund.eps > 0 && fund.bps > 0) roe = (fund.eps / fund.bps) * 100;
-        
-        var srimPrice = 0; var safetyMargin = 0;
-        if (fund.eps > 0 && fund.bps > 0) {
-          srimPrice = fund.bps * (roe / 8.0);
-          if (srimPrice > 0 && currentPrice > 0) safetyMargin = ((srimPrice - currentPrice) / srimPrice) * 100;
-        }
-        
-        var isPortfolio = (uniqueSymbols[cleanSym] === true);
-        var momentumPct = 0;
-        var rsi = 50;
-        if (isPortfolio) {
-          try {
-            var indicators = calculate50DayMomentumAndRSI_(cleanSym);
-            momentumPct = indicators.momentum_pct;
-            rsi = indicators.rsi;
-          } catch(indErr) {
-            logWarn_('quant_fast_scoring', 'Failed to fetch indicators for portfolio ' + cleanSym, { error: indErr.message });
-          }
-        }
-        
-        return {
-          symbol: cleanSym,
-          name: name,
-          price: currentPrice,
-          per: per > 0 ? roundNumber_(per, 2) : 'N/A',
-          pbr: pbr > 0 ? roundNumber_(pbr, 2) : 'N/A',
-          momentum_pct: roundNumber_(momentumPct, 2),
-          rsi: rsi,
-          srim_price: srimPrice > 0 ? Math.round(srimPrice) : 0,
-          safety_margin: srimPrice > 0 && currentPrice > 0 ? roundNumber_(safetyMargin, 1) : 0,
-          roe: roe > 0 ? roundNumber_(roe, 2) : 0,
-          debt: fund.debt !== undefined ? fund.debt : 100,
-          div_yield: divYield > 0 ? roundNumber_(divYield, 2) : 0,
-          beta: fund.beta !== undefined ? fund.beta : 1.0,
-          peg: 'N/A',
-          
-          per_val: per > 0 ? per : 9999,
-          pbr_val: pbr > 0 ? pbr : 9999,
-          momentum_val: momentumPct,
-          roe_val: roe > 0 ? roe : -9999,
-          debt_val: fund.debt !== undefined ? fund.debt : 9999,
-          div_yield_val: divYield > 0 ? divYield : -9999,
-          beta_val: fund.beta !== undefined ? fund.beta : 9999,
-          peg_val: 9999,
-          quant_score: 0
-        };
-      });
-      
-      // 가중 정렬기 적용
-      var scoringLookup = {};
-      var fastScored = sortHelper(fastScoring);
-      fastScored.forEach(function(item) {
-        scoringLookup[item.symbol] = item;
-      });
-      
-      scoring = portfolioSymbols.map(function(s) { return scoringLookup[s]; }).filter(Boolean);
-      domesticScoring = DOMESTIC_MARKET_UNIVERSE.map(function(s) { return scoringLookup[s]; }).filter(Boolean);
-      usScoring = US_MARKET_UNIVERSE.map(function(s) { return scoringLookup[s]; }).filter(Boolean);
-    } else {
-      // DB 캐시 정상 로드 성공 -> 매핑 사전 구성
-      var dbLookup = {};
-      dbRowsFiltered.forEach(function(row) {
-        var per = row.per;
-        var pbr = row.pbr;
-        var peg = row.peg;
-        var per_val = (per === 'N/A' || isNaN(per)) ? 9999 : parseFloat(per);
-        var pbr_val = (pbr === 'N/A' || isNaN(pbr)) ? 9999 : parseFloat(pbr);
-        var peg_val = (peg === 'N/A' || isNaN(peg)) ? 9999 : parseFloat(peg);
-        
-        var item = {
-          symbol: row.symbol,
-          name: getStockKoreanName_(row.symbol, row.name),
-          price: parseFloat(row.price || 0),
-          per: per,
-          pbr: pbr,
-          momentum_pct: parseFloat(row.momentum_pct || 0),
-          rsi: parseInt(row.rsi || 50),
-          srim_price: parseInt(row.srim_price || 0),
-          safety_margin: parseFloat(row.safety_margin || 0),
-          roe: parseFloat(row.roe || 0),
-          debt: parseFloat(row.debt || 100),
-          div_yield: parseFloat(row.div_yield || 0),
-          beta: parseFloat(row.beta || 1.0),
-          peg: peg,
-          
-          per_val: per_val,
-          pbr_val: pbr_val,
-          momentum_val: parseFloat(row.momentum_pct || 0),
-          roe_val: parseFloat(row.roe || 0),
-          debt_val: parseFloat(row.debt || 100),
-          div_yield_val: parseFloat(row.div_yield || 0),
-          beta_val: parseFloat(row.beta || 1.0),
-          peg_val: peg_val,
-          quant_score: 0
-        };
-        dbLookup[row.symbol] = item;
-      });
-      
-      // 💡 [자가 치유 엔진] 캐시 유실, 연산 실패, 혹은 종목명이 숫자/코드로 오염된 경우 실시간 스캔 보충
-      var selfHealStock = function(symbol, cachedItem) {
-        var cleanSym = normalizeStockSymbol_(symbol);
-        var isInvalidName = !cachedItem || !cachedItem.name || cachedItem.name === cleanSym || /^[0-9]+$/.test(cachedItem.name);
-        
-        if (!cachedItem || cachedItem.price <= 0 || isInvalidName) {
-          try {
-            // 🚀 [최적화] 자가치유 시 야후 파이낸스 일봉 차트 순차 조회를 절대 기동하지 않고, 
-            // 현재가만 1회 다이렉트 조회하여 결합함으로써 연쇄 API 병목을 0초화
-            var isDom = /^[0-9][A-Z0-9]{5}$/i.test(cleanSym);
-            var priceData = null;
-            if (isDom) {
-              try { priceData = fetchKisCurrentPrice_(cleanSym); } catch(e) { priceData = fetchNaverStockPrice_(cleanSym); }
-            } else {
-              try { priceData = fetchKisOverseasCurrentPrice_(cleanSym); } catch(e) { priceData = fetchYahooOverseasCurrentPrice_(cleanSym); }
-            }
-            var currentPrice = priceData ? parseFloat(priceData.close || 0) : 0;
-            var name = priceData ? String(priceData.name || cleanSym).trim() : cleanSym;
-            var existingName = (uniqueSymbols[cleanSym] && typeof uniqueSymbols[cleanSym] === 'string') ? uniqueSymbols[cleanSym] : null;
-            name = getStockKoreanName_(cleanSym, existingName || name);
-            
-            var fund = AM_QUANT_FUNDAMENTAL_DB[cleanSym] || { eps: 0, bps: 0, div: 0, grow: 10, debt: 100, beta: 1.0 };
-            var per = 0; var pbr = 0; var divYield = 0; var roe = 0;
-            if (currentPrice > 0) {
-              if (fund.eps > 0) per = currentPrice / fund.eps;
-              if (fund.bps > 0) pbr = currentPrice / fund.bps;
-              if (fund.div > 0) divYield = (fund.div / currentPrice) * 100;
-            }
-            if (fund.eps > 0 && fund.bps > 0) roe = (fund.eps / fund.bps) * 100;
-            
-            var srimPrice = 0; var safetyMargin = 0;
-            if (fund.eps > 0 && fund.bps > 0) {
-              srimPrice = fund.bps * (roe / 8.0);
-              if (srimPrice > 0 && currentPrice > 0) safetyMargin = ((srimPrice - currentPrice) / srimPrice) * 100;
-            }
-            
-            var isPortfolio = (uniqueSymbols[cleanSym] === true);
-            var momentumPct = 0;
-            var rsi = 50;
-            if (isPortfolio) {
-              try {
-                var indicators = calculate50DayMomentumAndRSI_(cleanSym);
-                momentumPct = indicators.momentum_pct;
-                rsi = indicators.rsi;
-              } catch(indErr) {
-                logWarn_('quant_self_heal', 'Failed to fetch indicators for portfolio ' + cleanSym, { error: indErr.message });
-              }
-            }
-            
-            logInfo_('quant_self_heal_optimized', 'Optimized self-healed symbol ' + symbol + ' (Portfolio indicators: ' + isPortfolio + ')');
-            
-            return {
-              symbol: cleanSym,
-              name: name,
-              price: currentPrice,
-              per: per > 0 ? roundNumber_(per, 2) : 'N/A',
-              pbr: pbr > 0 ? roundNumber_(pbr, 2) : 'N/A',
-              momentum_pct: roundNumber_(momentumPct, 2),
-              rsi: rsi,
-              srim_price: srimPrice > 0 ? Math.round(srimPrice) : 0,
-              safety_margin: srimPrice > 0 && currentPrice > 0 ? roundNumber_(safetyMargin, 1) : 0,
-              roe: roe > 0 ? roundNumber_(roe, 2) : 0,
-              debt: fund.debt !== undefined ? fund.debt : 100,
-              div_yield: divYield > 0 ? roundNumber_(divYield, 2) : 0,
-              beta: fund.beta !== undefined ? fund.beta : 1.0,
-              peg: 'N/A',
-              
-              per_val: per > 0 ? per : 9999,
-              pbr_val: pbr > 0 ? pbr : 9999,
-              momentum_val: momentumPct,
-              roe_val: roe > 0 ? roe : -9999,
-              debt_val: fund.debt !== undefined ? fund.debt : 9999,
-              div_yield_val: divYield > 0 ? divYield : -9999,
-              beta_val: fund.beta !== undefined ? fund.beta : 9999,
-              peg_val: 9999,
-              quant_score: 0
-            };
-          } catch(err) {
-            logWarn_('quant_self_heal', 'Failed to optimized self-heal symbol ' + symbol, { error: err.message });
-          }
-        }
-        return cachedItem;
-      };
-
-      // 국내/미국 탭 매핑 (자가 치유 필터 적용)
-      domesticScoring = DOMESTIC_MARKET_UNIVERSE.map(function(s) {
-        return selfHealStock(s, dbLookup[s]);
-      }).filter(Boolean);
-      
-      usScoring = US_MARKET_UNIVERSE.map(function(s) {
-        return selfHealStock(s, dbLookup[s]);
-      }).filter(Boolean);
-      
-      // 보유 탭 매핑 (유니버스에 없는 신규 수동 종목은 실시간 가벼운 스캔 보충, 유실 캐시는 자가 치유)
-      portfolioSymbols.forEach(function(s) {
-        var resolved = selfHealStock(s, dbLookup[s]);
-        if (resolved) {
-          scoring.push(resolved);
-        }
-      });
-    }
-    
-    // 기본 종합 퀀트 정렬 수행 (백엔드 기본 정렬)
-    var sortHelper = function(arr) {
-      if (arr.length === 0) return arr;
-      var size = arr.length;
-      var sortedPer = arr.slice().sort(function(a, b) { return a.per_val - b.per_val; });
-      var sortedPbr = arr.slice().sort(function(a, b) { return a.pbr_val - b.pbr_val; });
-      var sortedMom = arr.slice().sort(function(a, b) { return b.momentum_val - a.momentum_val; });
-      
-      arr.forEach(function(stock) {
-        var perRank = sortedPer.indexOf(stock);
-        var pbrRank = sortedPbr.indexOf(stock);
-        var momRank = sortedMom.indexOf(stock);
-        
-        var valPerScore = (stock.per_val < 9999) ? ((size - 1 - perRank) / (size - 1 || 1) * 50) : 0;
-        var valPbrScore = (stock.pbr_val < 9999) ? ((size - 1 - pbrRank) / (size - 1 || 1) * 50) : 0;
-        var valueScore = valPerScore + valPbrScore;
-        var momentumScore = (size - 1 - momRank) / (size - 1 || 1) * 100;
-        
-        stock.quant_score = Math.round((valueScore * 0.5) + (momentumScore * 0.5));
-      });
-      return arr.sort(function(a, b) { return b.quant_score - a.quant_score; });
-    };
-    
-    scoring = sortHelper(scoring);
-    domesticScoring = sortHelper(domesticScoring);
-    usScoring = sortHelper(usScoring);
-    
-    var resultObj = {
-      success: true,
-      timestamp: amNowString_() + ' (DB 캐시: ' + (latestDate || 'N/A') + ')',
-      vaa: vaa,
-      scoring: scoring,
-      domesticScoring: domesticScoring,
-      usScoring: usScoring
-    };
-    
-    // 🚀 연산 결과 캐싱 기동 (15분간 메모리 적재)
-    try {
-      cache.put(cacheKey, JSON.stringify(resultObj), 900);
-      logInfo_('quant_web_api', 'Computed and cached fresh Quant Lab web data', { force: force });
-    } catch(ce) {}
-    
-    return resultObj;
-  } catch(e) {
-    logWarn_('quant_web_api', 'Failed to fetch Quant Lab data for web', { error: e.message });
-    return {
-      success: false,
-      error: e.message
-    };
-  }
-}
+// 💡 [코드 정리] getQuantLabDataForWeb_OLD 함수 삭제됨 — getQuantLabDataForWebUnified_() 사용
 
 function getWebAppUrl_() {
-  var service = PropertiesService.getScriptProperties();
-  var customUrl = service.getProperty('CUSTOM_DASHBOARD_URL') || '';
-  
-  if (!customUrl) {
-    // 🚀 [자율 동기화 세이프 가드] settings 시트에서 직접 룩업 시도하여 속성값 자동 복구
-    try {
-      var settingsRows = readObjects_(AM_CONFIG.SHEETS.SETTINGS) || [];
-      var foundRow = settingsRows.filter(function(row) {
-        return String(row.key || '').trim() === 'CUSTOM_DASHBOARD_URL';
-      });
-      if (foundRow.length > 0) {
-        var val = String(foundRow[0].value || '').trim();
-        if (val && val.indexOf('****') < 0) {
-          customUrl = val;
-          service.setProperty('CUSTOM_DASHBOARD_URL', val);
-          logInfo_('properties_sync', 'Auto-restored CUSTOM_DASHBOARD_URL from settings sheet', { url: val });
-        }
-      }
-    } catch(e) {
-      logWarn_('properties_sync', 'Failed to auto-lookup CUSTOM_DASHBOARD_URL from sheet', { error: e.message });
-    }
+  try {
+    return ScriptApp.getService().getUrl() || '';
+  } catch(e) {
+    logWarn_('web_app', 'Failed to resolve private Apps Script dashboard URL', { error: e.message });
+    return '';
   }
-  
-  if (customUrl) return customUrl;
-  
-  // 🚀 [패치] CUSTOM_DASHBOARD_URL이 비어 있을 경우 기본적으로 GitHub Pages 대시보드 주소로 무조건 안전 폴백
-  return 'https://taewoonghwang.github.io/jusik/';
 }
 
 function getLogsForDebug_() {
@@ -3078,16 +2880,22 @@ function getLogsForDebug_() {
   return logs.slice(Math.max(0, logs.length - 40)).reverse();
 }
 
-function getSystemDiagnosticsForWeb() {
+function getSystemDiagnosticsForWeb(adminToken) {
+  requireWebAdminToken_(adminToken);
   var service = PropertiesService.getScriptProperties();
+  function maskAccount_(value) {
+    var text = String(value || '');
+    if (text.length <= 4) return text ? '****' : '';
+    return text.substring(0, 4) + '****';
+  }
   var diag = {
     PORTFOLIO_MODE: service.getProperty('PORTFOLIO_MODE'),
     GEMINI_API_KEY_EXISTS: !!service.getProperty('GEMINI_API_KEY'),
     GEMINI_MODEL: service.getProperty('GEMINI_MODEL') || 'gemini-2.5-flash',
     KIS_APP_KEY_EXISTS: !!service.getProperty('KIS_APP_KEY'),
     KIS_MOCK_APP_KEY_EXISTS: !!service.getProperty('KIS_MOCK_APP_KEY'),
-    KIS_CANO: service.getProperty('KIS_CANO'),
-    KIS_MOCK_CANO: service.getProperty('KIS_MOCK_CANO'),
+    KIS_CANO: maskAccount_(service.getProperty('KIS_CANO')),
+    KIS_MOCK_CANO: maskAccount_(service.getProperty('KIS_MOCK_CANO')),
     recent_logs: []
   };
   
@@ -3101,7 +2909,8 @@ function getSystemDiagnosticsForWeb() {
   return diag;
 }
 
-function testMockApiForWeb() {
+function testMockApiForWeb(adminToken) {
+  requireWebAdminToken_(adminToken);
   try {
     var account = getKisAccountConfig_();
     var mockAuth = (account.mockAppKey && account.mockAppSecret) ? {
@@ -3121,7 +2930,8 @@ function testMockApiForWeb() {
   }
 }
 
-function testQuantDbForWeb() {
+function testQuantDbForWeb(adminToken) {
+  requireWebAdminToken_(adminToken);
   try {
     var rawData = readObjects_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB) || [];
     return { success: true, count: rawData.length, sample: rawData.slice(0, 10) };
@@ -3130,7 +2940,8 @@ function testQuantDbForWeb() {
   }
 }
 
-function testPremarketAiForWeb() {
+function testPremarketAiForWeb(adminToken) {
+  requireWebAdminToken_(adminToken);
   try {
     var details = ["- 삼성전자 (005930): 현재가 72000원, RSI 55, 감지된 신호: BUY"];
     var prompt = buildPremarketPrompt_(details);
@@ -3189,7 +3000,8 @@ function callGeminiWithoutSearchGrounding_(prompt) {
   return JSON.parse(cleanText);
 }
 
-function testPremarketReportTrigger() {
+function testPremarketReportTrigger(adminToken) {
+  requireWebAdminToken_(adminToken);
   try {
     var res = runPremarketAiReport();
     return { success: true, result: res };

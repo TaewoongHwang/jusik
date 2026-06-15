@@ -9,11 +9,11 @@
 function getFredData_(seriesId, limit) {
   var apiKey = getScriptProperty_('FRED_API_KEY', '');
   if (!apiKey) {
-    // API 키가 없을 때의 안전한 우아한 Mock Fallback 데이터
-    if (seriesId === 'DGS10') return { value: 4.42, date: amTodayString_(), name: '미국 10년물 국채금리', unit: '%', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키가 설정되지 않아 고정값을 반환합니다.' };
-    if (seriesId === 'FEDFUNDS') return { value: 5.25, date: amTodayString_(), name: '미국 연방 기준금리', unit: '%', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키가 설정되지 않아 고정값을 반환합니다.' };
-    if (seriesId === 'CPIAUCSL') return { value: 3.40, date: amTodayString_(), name: '미국 소비자물가지수 (CPI)', unit: '%', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키가 설정되지 않아 고정값을 반환합니다.' };
-    return { value: 0, date: amTodayString_(), name: seriesId, unit: '', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키가 설정되지 않아 고정값을 반환합니다.' };
+    // 💡 [주의] 아래 폴백값은 2024년 기준 — 시간이 지나면 실제와 괴리가 커질 수 있음
+    if (seriesId === 'DGS10') return { value: 4.42, date: amTodayString_(), name: '미국 10년물 국채금리', unit: '%', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키 미설정. 폴백값(2024년 기준)을 반환합니다.' };
+    if (seriesId === 'FEDFUNDS') return { value: 5.25, date: amTodayString_(), name: '미국 연방 기준금리', unit: '%', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키 미설정. 폴백값(2024년 기준)을 반환합니다.' };
+    if (seriesId === 'CPIAUCSL') return { value: 3.40, date: amTodayString_(), name: '미국 소비자물가지수 (CPI)', unit: '%', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키 미설정. 폴백값(2024년 기준)을 반환합니다.' };
+    return { value: 0, date: amTodayString_(), name: seriesId, unit: '', is_mock: true, source: 'FRED_FALLBACK_STATIC', warning: 'FRED API 키 미설정. 폴백값을 반환합니다.' };
   }
   
   try {
@@ -75,7 +75,7 @@ function getEcosData_(statCode, statItemCode1, limit) {
     
     // ECOS API 표준 URL 형식
     // http://ecos.bok.or.kr/api/StatisticSearch/[APIKEY]/json/kr/1/[LIMIT]/[STATCODE]/[CYCLE]/[START]/[END]/[ITEMCODE]
-    var url = 'http://ecos.bok.or.kr/api/StatisticSearch/' + encodeURIComponent(apiKey) + 
+    var url = 'https://ecos.bok.or.kr/api/StatisticSearch/' + encodeURIComponent(apiKey) + 
               '/json/kr/1/' + (limit || 1) + '/' + statCode + '/D/' + startStr + '/' + todayStr + '/' + statItemCode1;
               
     var response = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
@@ -83,7 +83,7 @@ function getEcosData_(statCode, statItemCode1, limit) {
       // 주별/월별 조회를 위해 보완 호출 (사이클을 M으로 강제 전환)
       var startStrM = startStr.substring(0, 6);
       var todayStrM = todayStr.substring(0, 6);
-      url = 'http://ecos.bok.or.kr/api/StatisticSearch/' + encodeURIComponent(apiKey) + 
+      url = 'https://ecos.bok.or.kr/api/StatisticSearch/' + encodeURIComponent(apiKey) + 
             '/json/kr/1/' + (limit || 1) + '/' + statCode + '/M/' + startStrM + '/' + todayStrM + '/' + statItemCode1;
       response = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
     }
@@ -313,7 +313,7 @@ function getIntegratedMacroAdvice_(forceRefresh) {
   
   var dartLines = meta.dart_alerts.length > 0 ? meta.dart_alerts.map(function(d) {
     return "- [" + d.name + "] " + d.level + " 위험 발생! 공시명: " + d.reportName + " (" + d.pubDate + ") - 내용: " + d.message;
-  }).join('\n') : "보보유 종목 중 특이 공시 리스크 없음.";
+  }).join('\n') : "보유 종목 중 특이 공시 리스크 없음.";
   
   var isAnyMock = meta.macro.us_10y_bond.is_mock || meta.macro.us_fed_rate.is_mock || meta.macro.kr_base_rate.is_mock || meta.market_flow.is_mock;
   var mockWarningText = isAnyMock ? '\n⚠️ 주의: 현재 일부 거시경제 지표 또는 시장 수급 데이터가 API 연동 실패로 인해 예시(Mock) 데이터로 대체되었습니다. AI 자문 분석 시 이 점을 감안하여 분석 결과 상단에 "⚠️ 일부 데이터가 예시(Mock) 데이터이므로 실제 투자 시 참고용으로만 제한하여 활용하십시오"라는 안내 경고를 가독성 높은 HTML 디자인으로 반드시 포함하십시오.' : '';

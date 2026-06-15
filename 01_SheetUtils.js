@@ -327,6 +327,20 @@ function formatNumber_(num) {
   return parts.join('.');
 }
 
+// Cache wrapper for holdings with 30‑second TTL
+function getCachedHoldings_(sheetName) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'holdings_' + sheetName;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  var data = readObjects_(sheetName);
+  cache.put(cacheKey, JSON.stringify(data), 30); // 30 seconds
+  return data;
+}
+
+
 function roundNumber_(num, decimals) {
   var exp = Math.pow(10, decimals || 0);
   return Math.round(num * exp) / exp;
@@ -368,13 +382,27 @@ function writeLog_(level, module, message, details) {
   try {
     var sheetName = AM_CONFIG.SHEETS.LOGS;
     ensureSheet_(sheetName, AM_SHEET_SCHEMAS[sheetName]);
-    appendObjectRowsNoLock_(sheetName, [{
+    
+    var logRow = [{
       timestamp: amNowString_(),
       level: level,
       module: module,
       message: message,
       details: typeof details === 'object' ? JSON.stringify(details) : String(details || '')
-    }]);
+    }];
+    
+    // 💡 [안정성] 짧은 락으로 동시 로그 쓰기 충돌 방지 (2초 타임아웃)
+    var lock = LockService.getScriptLock();
+    if (lock.tryLock(2000)) {
+      try {
+        appendObjectRowsNoLock_(sheetName, logRow);
+      } finally {
+        lock.releaseLock();
+      }
+    } else {
+      // 락 획득 실패 시에도 로그를 잃지 않도록 콘솔 폴백
+      appendObjectRowsNoLock_(sheetName, logRow);
+    }
   } catch(e) {
     console.warn('Logging failed: ' + e.message);
   }
@@ -440,6 +468,7 @@ function onOpen() {
   menu.addItem('🤖 장전 뉴스 AI 리포트 즉시 발행', 'menuRunPremarketAiReport');
   menu.addItem('🤖 모의투자 마감 보고 즉시 발행', 'menuRunDailyCloseReport');
   menu.addItem('🤖 자동화 스케줄 트리거 전면 설치', 'menuInstallTriggers');
+  menu.addItem('🔌 텔레그램 실시간 웹훅 설치 및 동기화', 'menuInstallTelegramWebhook');
   menu.addItem('🤖 퀀트 300만 모의투자 즉시 리밸런싱', 'menuRunQuantPaperRebalancing');
   menu.addSeparator();
   menu.addItem('⚙️ settings 시트 설정을 스크립트 속성으로 동기화', 'menuSyncPropertiesFromSheet');
@@ -521,6 +550,15 @@ function menuInstallTriggers() {
   }
 }
 
+function menuInstallTelegramWebhook() {
+  try {
+    var result = installTelegramWebhook();
+    safeUiAlert_('🔌 [텔레그램 웹훅 연동 완료]\n\n' + result.message);
+  } catch(e) {
+    safeUiAlert_('❌ [텔레그램 웹훅 연동 실패]: ' + e.message);
+  }
+}
+
 function menuRunQuantPaperRebalancing() {
   var ui = SpreadsheetApp.getUi();
   var confirmMsg = [
@@ -565,10 +603,10 @@ function menuRunDiagnostics() {
       '  - 봇 사용자명: @' + (diag.diagnostics.telegram_bot.username || 'N/A'),
       '  - 봇 이름: ' + (diag.diagnostics.telegram_bot.first_name || 'N/A'),
       '',
-      '[2. 웹훅 및 TMA 미니앱 정렬] - ' + diag.diagnostics.telegram_webhook.status,
-      '  - 웹앱 실시간 주소: ' + (diag.diagnostics.telegram_webhook.web_app_url ? '획득 완료' : '실패'),
-      '  - 웹훅 주소 싱크상태: ' + (diag.diagnostics.telegram_webhook.aligned ? '일치함 (무결점)' : '어긋남'),
-      '  - 자가 치유(Self-healed) 작동 여부: ' + (diag.diagnostics.telegram_webhook.auto_healed ? '자가 정렬 치료 완수! 🎉' : '치료 불필요 (양호)'),
+      '[2. 텔레그램 비공개 폴링 상태] - ' + diag.diagnostics.telegram_webhook.status,
+      '  - 비공개 대시보드 주소: ' + (diag.diagnostics.telegram_webhook.web_app_url ? '획득 완료' : '실패'),
+      '  - 웹훅 해제 및 폴링 상태: ' + (diag.diagnostics.telegram_webhook.aligned ? '정상' : '점검 필요'),
+      '  - 기존 웹훅 자동 해제 여부: ' + (diag.diagnostics.telegram_webhook.auto_healed ? '해제 완료' : '기존 웹훅 없음'),
       '  - 대기 큐 메시지 수: ' + diag.diagnostics.telegram_webhook.pending_update_count + '개',
       '  - 최근 전송 오류 메시지: ' + (diag.diagnostics.telegram_webhook.last_error_message || '없음'),
       '  - 오류 발생 시각: ' + (diag.diagnostics.telegram_webhook.last_error_date || 'N/A'),
@@ -578,7 +616,7 @@ function menuRunDiagnostics() {
       '  - 금일 평가 자산 종목수: ' + diag.diagnostics.portfolio.holdingsCount + '개',
       '  - 6대 데이터 테이블 적재 상태: ' + diag.diagnostics.sheets.status,
       '----------------------------------------',
-      '💡 웹훅 정렬 상태가 OUT_OF_ALIGN이었거나 봇이 먹통이었다면, 방금 자가 치유 엔진이 자동으로 텔레그램에 최신 웹앱 주소를 덮어씌워 강제 정렬 치료를 완료했습니다.'
+      '💡 현재 공개 웹훅은 해제되어 있으며, 소유자 권한의 1분 폴링 트리거가 텔레그램 메시지를 안전하게 수신합니다.'
     ].join('\n');
     safeUiAlert_(msg);
   } catch(e) {
@@ -676,7 +714,6 @@ function syncPropertiesFromSheet() {
     { key: 'KIS_BASE_URL', desc: '한국투자증권 API 통신 주소' },
     { key: 'ADMIN_TOKEN', desc: '웹앱 대시보드 디버그/진단용 관리자 인증 토큰' },
     { key: 'WEB_APP_URL', desc: '구글 앱스 스크립트 웹앱 배포 실행 URL (/exec)' },
-    { key: 'CUSTOM_DASHBOARD_URL', desc: '경고 배너 우회 제거용 GitHub Pages / 외부 대시보드 주소' },
     { key: 'PORTFOLIO_MODE', desc: '현재 포트폴리오 운용 모드 (REAL / MOCK / PAPER)' },
     { key: 'KIS_MOCK_SEED_MONEY', desc: '한국투자증권 모의투자 개설 시 설정한 초기 가상 예수금 원금 (기본 10000000)' }
   ];
@@ -931,6 +968,17 @@ function setupAppsScriptTriggers_() {
     var existingHandlers = triggers.map(function(t) {
       return t.getHandlerFunction();
     });
+
+        // 텔레그램 웹훅 자동 동기화 상태 검사 및 치유
+    var webAppUrl = getWebAppUrl_();
+    var adminToken = getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.ADMIN_TOKEN, '');
+    if (webAppUrl && adminToken && existingHandlers.indexOf('runPremarketAiReport') >= 0) {
+      try {
+        installTelegramWebhook();
+      } catch(webErr) {
+        logWarn_('triggers', 'Failed to auto-align Telegram Webhook during setup', { error: webErr.message });
+      }
+    }
     
     // 1. 장전 리포트 (매일 오전 8시 10분)
     if (existingHandlers.indexOf('runPremarketAiReport') < 0) {

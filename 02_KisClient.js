@@ -243,7 +243,21 @@ function cleanAndExtractKisAccount_(canoVal, prdtCdVal) {
   };
 }
 
+// 💡 [실행 단위 캐싱] getKisAccountConfig_ 결과를 동일 실행 컨텍스트 내에서 재사용
+var _kisAccountConfigCache = null;
+
+/**
+ * 캐시 무효화 — 계좌 설정 변경 시 호출하여 다음 조회 때 갱신된 값을 읽도록 보장
+ */
+function invalidateKisAccountConfigCache_() {
+  _kisAccountConfigCache = null;
+}
+
 function getKisAccountConfig_() {
+  // 💡 [성능 최적화] 동일 실행 내에서 이미 로딩된 설정이 있으면 즉시 반환
+  if (_kisAccountConfigCache) {
+    return _kisAccountConfigCache;
+  }
   var service = PropertiesService.getScriptProperties();
   var cano = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_CANO) || '';
   var accountProductCode = service.getProperty(AM_CONFIG.PROPERTY_KEYS.KIS_ACNT_PRDT_CD) || '01';
@@ -347,7 +361,8 @@ function getKisAccountConfig_() {
     mockProductCode: cleanMock.productCode
   });
   
-  return {
+  // 💡 [캐시 저장] 동일 실행 내에서 재사용하도록 결과를 메모리에 보존
+  _kisAccountConfigCache = {
     cano: cleanNormal.cano,
     accountProductCode: cleanNormal.productCode || '01',
     isaCano: cleanIsa.cano,
@@ -360,6 +375,7 @@ function getKisAccountConfig_() {
     mockAppSecret: sanitizeKey_(mockAppSecret),
     mockBaseUrl: mockBaseUrl || 'https://openapivts.koreainvestment.com:29443'
   };
+  return _kisAccountConfigCache;
 }
 
 // ==================================================
@@ -523,6 +539,13 @@ function fetchNaverStockPrice_(symbol) {
           market: 'KOSPI',
           sector: 'ETF'
         };
+      } else {
+        // 💡 [헬스체크] 네이버 금융 HTML 구조 변경 감지 — close=0이면 파서 고장 의심
+        logWarn_('naver_scraper', 'Naver Finance returned close=0 for ' + cleanSymbol + ' — HTML structure may have changed', {
+          htmlLength: html.length,
+          blindMatchFound: !!blindMatch,
+          priceMatchFound: !!(html.match(/현재가\s+([0-9,]+)/i))
+        });
       }
     }
   } catch(e) {
@@ -1055,4 +1078,148 @@ function fetchNaverOverseasCurrentPrice_(symbol) {
     logWarn_('naver_ovs_fallback', 'Failed to fetch overseas price from Naver for ' + symbol, { error: e.message });
   }
   return null;
+}
+
+/**
+ * 🇰🇷 [신설] 국내 주식 미체결 주문 내역 조회 API
+ */
+function fetchKisDomesticNccldOrders_(cano, acntPrdtCd, customAuth) {
+  var path = '/uapi/domestic-stock/v1/trading/inquire-nccld';
+  var isMock = customAuth && String(customAuth.baseUrl).indexOf('openapivts') >= 0;
+  var trId = isMock ? 'VTTC8012R' : 'TTTC8012R'; // 모의투자 / 실계좌
+  
+  var params = {
+    CANO: cano,
+    ACNT_PRDT_CD: acntPrdtCd || '01',
+    CTX_AREA_FK100: '',
+    CTX_AREA_NK100: '',
+    INQR_DVSN: '00', // 00: 전체
+    OVS_CO_YN: 'N'
+  };
+  
+  try {
+    var response = kisGet_(path, params, trId, customAuth);
+    if (response && response.rt_cd === '0') {
+      return response.output || [];
+    } else {
+      var msg = response ? response.msg1 : '응답 없음';
+      logWarn_('kis_client', 'Failed to fetch domestic unfilled orders', { error: msg });
+      return [];
+    }
+  } catch(e) {
+    logWarn_('kis_client', 'Exception in fetchKisDomesticNccldOrders_', { error: e.message });
+    throw e;
+  }
+}
+
+/**
+ * 🇺🇸 [신설] 해외 주식 미체결 주문 내역 조회 API (미국 전용)
+ */
+function fetchKisOverseasNccldOrders_(exchangeCode, cano, acntPrdtCd, customAuth) {
+  var path = '/uapi/overseas-stock/v1/trading/inquire-nccld';
+  var isMock = customAuth && String(customAuth.baseUrl).indexOf('openapivts') >= 0;
+  var trId = isMock ? 'VTTS3018R' : 'TTTS3018R'; // 모의투자 / 실계좌
+  
+  var params = {
+    CANO: cano,
+    ACNT_PRDT_CD: acntPrdtCd || '01',
+    OVS_EXCG_CD: exchangeCode || 'NASD',
+    SORT_SQN: 'DS', // 내림차순
+    CTX_AREA_FK200: '',
+    CTX_AREA_NK200: ''
+  };
+  
+  try {
+    var response = kisGet_(path, params, trId, customAuth);
+    if (response && response.rt_cd === '0') {
+      return response.output || [];
+    } else {
+      var msg = response ? response.msg1 : '응답 없음';
+      logWarn_('kis_client', 'Failed to fetch overseas unfilled orders', { error: msg });
+      return [];
+    }
+  } catch(e) {
+    logWarn_('kis_client', 'Exception in fetchKisOverseasNccldOrders_', { error: e.message });
+    throw e;
+  }
+}
+
+/**
+ * 🇰🇷 [신설] 국내 주식 주문 정정/취소 실행 API
+ * @param {string} odno 원주문번호
+ * @param {string} orgnOdrNo 원주문번호 (일반적으로 odno와 동일)
+ * @param {string} rvseCnclDvsnCd 정정취소구분코드 (01: 정정, 02: 취소)
+ * @param {number} qty 취소/정정 수량
+ * @param {number} price 정정 단가 (취소 시 0 또는 '0')
+ */
+function cancelOrModifyDomesticOrder_(odno, orgnOdrNo, rvseCnclDvsnCd, qty, price, customAuth) {
+  var path = '/uapi/domestic-stock/v1/trading/order-rvsecncl';
+  var isMock = customAuth && String(customAuth.baseUrl).indexOf('openapivts') >= 0;
+  var trId = isMock ? 'VTTC0803U' : 'TTTC0803U'; // 모의투자 / 실계좌
+  
+  var payload = {
+    CANO: (customAuth && customAuth.cano) ? customAuth.cano : getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_CANO, ''),
+    ACNT_PRDT_CD: (customAuth && customAuth.productCode) ? customAuth.productCode : '01',
+    KRX_FWDG_ORD_ORG_NO: '', // 한국거래소전송주문조직번호 (보통 공백)
+    ORGN_ODNO: orgnOdrNo || odno,
+    RVSE_CNCL_DVSN_CD: rvseCnclDvsnCd || '02', // 02: 취소
+    ORD_DVSN: price > 0 ? '00' : '01', // 00: 지정가, 01: 시장가
+    ORD_QTY: String(qty),
+    ORD_UNPR: String(price || 0),
+    QTY_ALL_ORD_YN: 'Y' // 전량 취소/정정 여부
+  };
+  
+  try {
+    var response = kisPost_(path, payload, trId, customAuth);
+    if (response && response.rt_cd === '0') {
+      return { success: true, orderNo: response.output.ODNO, msg: response.msg1 };
+    } else {
+      var msg = response ? response.msg1 : '응답 없음';
+      logWarn_('kis_client', 'Failed to cancel/modify domestic order', { error: msg, payload: payload });
+      return { success: false, reason: msg };
+    }
+  } catch(e) {
+    logWarn_('kis_client', 'Exception in cancelOrModifyDomesticOrder_', { error: e.message });
+    return { success: false, reason: e.message };
+  }
+}
+
+/**
+ * 🇺🇸 [신설] 해외 주식 주문 정정/취소 실행 API
+ * @param {string} exchangeCode 해외거래소코드 (NASD, NYSE, AMEX 등)
+ * @param {string} odno 원주문번호
+ * @param {string} orgnOdrNo 원주문번호 (일반적으로 odno와 동일)
+ * @param {string} rvseCnclDvsnCd 정정취소구분코드 (01: 정정, 02: 취소)
+ * @param {number} qty 취소/정정 수량
+ * @param {number} price 정정 단가 (취소 시 0)
+ */
+function cancelOrModifyOverseasOrder_(exchangeCode, odno, orgnOdrNo, rvseCnclDvsnCd, qty, price, customAuth) {
+  var path = '/uapi/overseas-stock/v1/trading/order-rvsecncl';
+  var isMock = customAuth && String(customAuth.baseUrl).indexOf('openapivts') >= 0;
+  var trId = isMock ? 'VTTS3011U' : 'TTTS3011U'; // 모의투자 / 실계좌
+  
+  var payload = {
+    CANO: (customAuth && customAuth.cano) ? customAuth.cano : getScriptProperty_(AM_CONFIG.PROPERTY_KEYS.KIS_CANO, ''),
+    ACNT_PRDT_CD: (customAuth && customAuth.productCode) ? customAuth.productCode : '01',
+    OVS_EXCG_CD: exchangeCode || 'NASD',
+    ORGN_ODNO: orgnOdrNo || odno,
+    RVSE_CNCL_DVSN_CD: rvseCnclDvsnCd || '02', // 02: 취소
+    ORD_QTY: String(qty),
+    ORD_UNPR: String(price || 0),
+    SLL_BUY_DVSN_CD: '00' // 정정취소 시 공통 00
+  };
+  
+  try {
+    var response = kisPost_(path, payload, trId, customAuth);
+    if (response && response.rt_cd === '0') {
+      return { success: true, orderNo: response.output.ODNO, msg: response.msg1 };
+    } else {
+      var msg = response ? response.msg1 : '응답 없음';
+      logWarn_('kis_client', 'Failed to cancel/modify overseas order', { error: msg, payload: payload });
+      return { success: false, reason: msg };
+    }
+  } catch(e) {
+    logWarn_('kis_client', 'Exception in cancelOrModifyOverseasOrder_', { error: e.message });
+    return { success: false, reason: e.message };
+  }
 }
