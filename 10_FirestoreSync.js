@@ -80,7 +80,7 @@ function syncPortfolioToFirestore_(payload) {
     logInfo_('firestore_sync', 'Firestore portfolio sync completed successfully (HTTP ' + code + ')');
   } else {
     var responseText = response.getContentText();
-    logError_('firestore_sync', 'Firestore sync failed', {
+    logWarn_('firestore_sync', 'Firestore sync failed (ERROR)', {
       responseCode: code,
       body: responseText
     });
