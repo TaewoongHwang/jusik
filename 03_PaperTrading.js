@@ -1027,12 +1027,12 @@ function collectHoldingsCurrent(forceRefresh, modeOverride) {
     rewriteHoldingWeightsForDate_(today);
   } catch(ex) {}
 
-  // 🚀 [신설] Firebase Firestore 실시간 캐시 강제 동기화 실행 (배치 수집 완료 시점)
+  // 🚀 [신설] Supabase PostgreSQL 실시간 캐시 강제 동기화 실행 (배치 수집 완료 시점)
   try {
     getPortfolioDataForWeb(false);
-    logInfo_('portfolio_collector', 'Firebase Firestore sync triggered after batch collection');
+    logInfo_('portfolio_collector', 'Supabase sync triggered after batch collection');
   } catch(fsErr) {
-    logWarn_('portfolio_collector', 'Firebase Firestore sync after collection failed', { error: fsErr.message });
+    logWarn_('portfolio_collector', 'Supabase sync after collection failed', { error: fsErr.message });
   }
 
   } finally {

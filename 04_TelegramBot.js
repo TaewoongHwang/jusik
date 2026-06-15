@@ -1704,11 +1704,11 @@ function getPortfolioDataForWeb(forceRefresh) {
     assets: assets
   };
 
-  // 🚀 [신설] Firebase Firestore 실시간 캐시 동기화 실행
+  // 🚀 [신설] Supabase PostgreSQL 실시간 캐시 동기화 실행
   try {
-    syncPortfolioToFirestore_(payload);
+    syncPortfolioToSupabase_(payload);
   } catch(fsErr) {
-    logWarn_('portfolio_api', 'Firebase Firestore sync failed', { error: fsErr.message });
+    logWarn_('portfolio_api', 'Supabase sync failed', { error: fsErr.message });
   }
 
   return payload;
