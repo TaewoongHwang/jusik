@@ -42,6 +42,7 @@
     window.JUSIK_IS_PWA_SHELL =
       new URLSearchParams(location.search).get('legacy_shell') === '1';
     window.JUSIK_REQUIRES_SUPABASE_AUTH = !location.hostname.includes('google');
+    window.JUSIK_OWNER_EMAIL = 'tang4319@gmail.com';
 
     if (window.JUSIK_IS_PWA_SHELL) {
       document.documentElement.classList.add('pwa-shell');
@@ -1639,6 +1640,14 @@
       cursor: pointer;
     }
 
+    .supabase-auth-card .google-login-btn {
+      margin-bottom: 10px;
+      color: #1d1d1f !important;
+      background: #ffffff !important;
+      border: 1px solid rgba(60, 60, 67, 0.16);
+      box-shadow: 0 8px 22px rgba(31, 35, 41, 0.08) !important;
+    }
+
     .supabase-auth-status {
       min-height: 20px;
       margin-top: 12px;
@@ -1785,6 +1794,13 @@
       color: #ffffff !important;
     }
 
+    .supabase-auth-card .google-login-btn {
+      color: #1d1d1f !important;
+      background: #ffffff !important;
+      border: 1px solid rgba(60, 60, 67, 0.16) !important;
+      box-shadow: 0 8px 22px rgba(31, 35, 41, 0.08) !important;
+    }
+
     .modal-btn-clear {
       background: rgba(255, 59, 48, 0.10) !important;
       border-color: rgba(255, 59, 48, 0.20) !important;
@@ -1867,8 +1883,11 @@
   <div id="supabaseAuthGate" class="supabase-auth-gate" aria-live="polite">
     <div class="supabase-auth-card">
       <h2>JUSIK AI 보안 로그인</h2>
-      <p>등록된 소유자 계정으로만 포트폴리오 데이터를 볼 수 있습니다. 이메일로 받은 로그인 링크를 열어 주세요.</p>
+      <p>등록된 소유자 Google 계정으로만 포트폴리오 데이터를 볼 수 있습니다. 이메일 링크 로그인은 보조 수단으로 사용할 수 있습니다.</p>
       <input id="supabaseAuthEmail" type="email" autocomplete="email" placeholder="소유자 이메일">
+      <button id="supabaseGoogleLoginButton" class="google-login-btn" type="button" onclick="signInWithGoogle()">
+        Google로 계속하기
+      </button>
       <button id="supabaseMagicLinkButton" type="button" onclick="sendSupabaseMagicLink()">로그인 링크 받기</button>
       <div id="supabaseAuthStatus" class="supabase-auth-status"></div>
     </div>
@@ -2599,11 +2618,14 @@
       const session = result.data && result.data.session;
       if (!session) {
         gate.classList.add('active');
+        showSupabaseRedirectError_(status);
+        if (shouldAutoStartGoogleLogin_()) {
+          signInWithGoogle({ automatic: true });
+        }
         return false;
       }
 
-      const role = session.user && session.user.app_metadata && session.user.app_metadata.role;
-      if (role !== 'owner') {
+      if (!isSupabaseOwnerSession_(session)) {
         gate.classList.add('active');
         status.textContent = '이 계정에는 포트폴리오 소유자 권한이 없습니다.';
         return false;
@@ -2612,6 +2634,67 @@
       gate.classList.remove('active');
       document.getElementById('supabaseSignOutButton').style.display = 'inline-flex';
       return true;
+    }
+
+    function isSupabaseOwnerSession_(session) {
+      const user = session && session.user;
+      if (!user) return false;
+      const role = user.app_metadata && user.app_metadata.role;
+      const email = String(user.email || '').trim().toLowerCase();
+      const ownerEmail = String(window.JUSIK_OWNER_EMAIL || '').trim().toLowerCase();
+      return role === 'owner' || (!!ownerEmail && email === ownerEmail);
+    }
+
+    function getSupabaseRedirectUrl_() {
+      return location.origin + location.pathname;
+    }
+
+    function showSupabaseRedirectError_(status) {
+      const search = new URLSearchParams(location.search || '');
+      const hash = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+      const message = search.get('error_description') || hash.get('error_description') || search.get('error') || hash.get('error');
+      if (message) {
+        status.textContent = '자동 Google 로그인 확인에 실패했습니다. 아래 버튼으로 다시 로그인해 주세요: ' + message;
+      }
+    }
+
+    function shouldAutoStartGoogleLogin_() {
+      const search = new URLSearchParams(location.search || '');
+      const hash = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+      if (search.get('error') || hash.get('error') || search.get('code') || hash.get('access_token')) return false;
+      if (sessionStorage.getItem('jusik_google_auto_login_attempted') === '1') return false;
+      sessionStorage.setItem('jusik_google_auto_login_attempted', '1');
+      return true;
+    }
+
+    async function signInWithGoogle(options) {
+      const isAutomatic = !!(options && options.automatic);
+      const status = document.getElementById('supabaseAuthStatus');
+      const button = document.getElementById('supabaseGoogleLoginButton');
+
+      if (!window.supabaseClient) {
+        status.textContent = 'Supabase 연결 설정을 확인해 주세요.';
+        return;
+      }
+
+      if (button) button.disabled = true;
+      status.textContent = isAutomatic
+        ? '이미 로그인된 Google 계정이 있는지 자동 확인 중입니다...'
+        : 'Google 로그인 화면으로 이동합니다...';
+      const result = await window.supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: getSupabaseRedirectUrl_(),
+          queryParams: isAutomatic
+            ? { prompt: 'none' }
+            : { access_type: 'offline', prompt: 'select_account' }
+        }
+      });
+      if (button) button.disabled = false;
+
+      if (result.error) {
+        status.textContent = 'Google 로그인 시작 실패: ' + result.error.message;
+      }
     }
 
     async function sendSupabaseMagicLink() {
@@ -2630,7 +2713,7 @@
       const result = await window.supabaseClient.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: location.origin + location.pathname
+          emailRedirectTo: getSupabaseRedirectUrl_()
         }
       });
       button.disabled = false;
