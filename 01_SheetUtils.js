@@ -473,6 +473,10 @@ function onOpen() {
   menu.addSeparator();
   menu.addItem('⚙️ settings 시트 설정을 스크립트 속성으로 동기화', 'menuSyncPropertiesFromSheet');
   menu.addItem('⚙️ 스크립트 속성을 settings 시트로 백업', 'menuBackupPropertiesToSheet');
+  menu.addItem('🔐 Supabase 서버 키 안전 설정', 'menuConfigureSupabaseSecret');
+  menu.addItem('🛡️ Supabase 보안 상태 진단', 'menuDiagnoseSupabaseSecurity');
+  menu.addItem('🔄 Supabase 포트폴리오 캐시 강제 동기화', 'menuForceSyncSupabasePortfolio');
+  menu.addItem('🔎 KIS 보유자산 API 진단', 'menuDiagnoseKisHoldings');
   menu.addSeparator();
   menu.addItem('🧹 레거시 방대 시트 일괄 대청소', 'menuCleanupLegacySheets');
   menu.addSeparator();
@@ -481,10 +485,94 @@ function onOpen() {
   menu.addToUi();
 }
 
+function menuConfigureSupabaseSecret() {
+  var html = HtmlService.createHtmlOutputFromFile('SupabaseSecretDialog')
+    .setWidth(460)
+    .setHeight(330);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Supabase 서버 키 설정');
+}
+
+function menuDiagnoseSupabaseSecurity() {
+  try {
+    var status = getSupabaseSecurityStatus_();
+    var probe = probeSupabaseServerAccess_();
+    var lines = [
+      '🛡️ [Supabase 보안 상태 진단]',
+      '',
+      '• URL 설정: ' + (status.urlConfigured ? 'OK' : 'MISSING'),
+      '• 서버 키 저장: ' + (status.secretKeyConfigured ? 'OK' : 'MISSING'),
+      '• 서버 키 형식: ' + (status.secretKeyAccepted ? 'OK' : 'INVALID'),
+      '• 레거시 공개 키 속성 제거: ' + (!status.legacyKeyConfigured ? 'OK' : 'CHECK'),
+      '• holdings 서버 접근: HTTP ' + probe.holdingsStatus,
+      '• settings 서버 접근: HTTP ' + probe.settingsStatus,
+      '',
+      '정상 기준: 서버 키 형식 OK, 레거시 공개 키 속성 제거 OK, 두 서버 접근 HTTP 200'
+    ];
+    safeUiAlert_(lines.join('\n'));
+  } catch(e) {
+    safeUiAlert_('❌ [Supabase 진단 실패]\n\n' + e.message);
+  }
+}
+
+function menuDiagnoseKisHoldings() {
+  try {
+    var diag = buildKisDiagnostics_();
+
+    function formatCheck_(check) {
+      if (!check) return '';
+      if (check.status === 'OK') {
+        return '  - ' + check.label + ': OK / 원본 ' + check.output1_count + '건 / 정규화 ' + check.normalized_count + '건';
+      }
+      if (check.status === 'SKIPPED') {
+        return '  - ' + check.label + ': SKIPPED / ' + (check.reason || '지원되지 않는 API라 건너뜀');
+      }
+      var err = String(check.error || 'Unknown error');
+      if (err.length > 140) err = err.substring(0, 140) + '...';
+      return '  - ' + check.label + ': FAIL / ' + err;
+    }
+
+    var lines = [
+      '🔎 [KIS 보유자산 API 진단]',
+      '',
+      '• 진단 시각: ' + diag.checked_at,
+      '• 운용 모드: ' + diag.portfolio_mode,
+      '• 추정 원인: ' + diag.likely_issue,
+      '',
+      '[1. 설정 상태]',
+      '  - REAL 계좌: ' + diag.config.cano + ' / 상품코드 ' + diag.config.product_code,
+      '  - ISA 계좌: ' + diag.config.isa_cano + ' / 상품코드 ' + (diag.config.isa_product_code || 'N/A'),
+      '  - MOCK 계좌: ' + diag.config.mock_cano + ' / 상품코드 ' + (diag.config.mock_product_code || 'N/A'),
+      '  - REAL AppKey: ' + (diag.config.app_key_exists ? '설정됨' : '누락'),
+      '  - REAL AppSecret: ' + (diag.config.app_secret_exists ? '설정됨' : '누락'),
+      '  - settings 자동 회수: ' + ((diag.sync_from_settings.keys || []).length > 0 ? diag.sync_from_settings.keys.join(', ') : '추가 회수 없음'),
+      '',
+      '[2. REAL 잔고 API]',
+    ];
+
+    (diag.real_checks || []).forEach(function(check) {
+      lines.push(formatCheck_(check));
+    });
+
+    lines.push('');
+    lines.push('[3. MOCK 잔고 API]');
+    if (diag.mock_checks && diag.mock_checks.length > 0) {
+      diag.mock_checks.forEach(function(check) {
+        lines.push(formatCheck_(check));
+      });
+    } else {
+      lines.push('  - MOCK 설정이 없어 진단을 건너뜀');
+    }
+
+    safeUiAlert_(lines.join('\n'));
+  } catch(e) {
+    safeUiAlert_('❌ [KIS 진단 실패]\n\n' + e.message);
+  }
+}
+
 function menuUpdateQuantUniverseDatabase() {
   try {
-    updateQuantUniverseDatabase();
-    safeUiAlert_('✅ [퀀트 DB 갱신 완료]\n\n50대 우량주(국내 30종 + 미국 20종)의 최신 가격, 모멘텀, RSI, S-Rim 적정가, 안전마진 등을 성공적으로 갱신하여 quant_universe_db 시트에 적재했습니다!');
+    var res = updateQuantUniverseDatabaseFast();
+    safeUiAlert_('✅ [퀀트 DB 빠른 갱신 완료]\n\n총 ' + res.count + '개 종목의 퀀트 캐시를 quant_universe_db 및 Supabase quant_scores에 갱신했습니다.\n\n실시간 전체 재계산 대신 DB/정적 팩터 기반 빠른 캐시를 사용하여 Apps Script 최대 실행 시간 초과를 피합니다.');
   } catch(e) {
     safeUiAlert_('❌ [갱신 실패] 퀀트 DB 갱신 도중 오류가 발생했습니다: ' + e.message);
   }
@@ -713,6 +801,8 @@ function syncPropertiesFromSheet() {
     { key: 'KIS_ENV', desc: 'KIS 투자 환경 (real / mock)' },
     { key: 'KIS_BASE_URL', desc: '한국투자증권 API 통신 주소' },
     { key: 'ADMIN_TOKEN', desc: '웹앱 대시보드 디버그/진단용 관리자 인증 토큰' },
+    { key: 'SUPABASE_URL', desc: 'Supabase 프로젝트 URL' },
+    { key: 'SUPABASE_SECRET_KEY', desc: 'Supabase 서버 전용 sb_secret 또는 service_role 키 (브라우저 노출 금지)' },
     { key: 'WEB_APP_URL', desc: '구글 앱스 스크립트 웹앱 배포 실행 URL (/exec)' },
     { key: 'PORTFOLIO_MODE', desc: '현재 포트폴리오 운용 모드 (REAL / MOCK / PAPER)' },
     { key: 'KIS_MOCK_SEED_MONEY', desc: '한국투자증권 모의투자 개설 시 설정한 초기 가상 예수금 원금 (기본 10000000)' }
@@ -845,7 +935,7 @@ function backupPropertiesToSheet() {
   var finalRows = [];
   
   // 💡 [보안 마스킹 강제 집행] 극비 자격증명은 시트에 평문 노출을 방지하기 위해 마스킹
-  var sensitiveKeys = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_ACCESS_TOKEN', 'GEMINI_API_KEY', 'TELEGRAM_BOT_TOKEN', 'KIS_ISA_APP_KEY', 'KIS_ISA_APP_SECRET', 'KIS_MOCK_APP_KEY', 'KIS_MOCK_APP_SECRET'];
+  var sensitiveKeys = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_ACCESS_TOKEN', 'GEMINI_API_KEY', 'TELEGRAM_BOT_TOKEN', 'KIS_ISA_APP_KEY', 'KIS_ISA_APP_SECRET', 'KIS_MOCK_APP_KEY', 'KIS_MOCK_APP_SECRET', 'SUPABASE_SECRET_KEY'];
   
   // 1. 기존 시트에 있던 키들을 먼저 백업값 기준으로 최신화하여 순서 유지
   currentRows.forEach(function(row) {
@@ -955,6 +1045,20 @@ function seedQuantSettings_() {
   logInfo_('sheet_utils', 'Successfully seeded default quant settings', { seeded_count: defaultSettings.length });
 }
 
+function pruneLegacyTriggers_() {
+  var legacyHandlers = {
+    updateQuantUniverseDatabase: true
+  };
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(trigger) {
+    var handler = trigger.getHandlerFunction();
+    if (legacyHandlers[handler]) {
+      ScriptApp.deleteTrigger(trigger);
+      logInfo_('triggers', 'Deleted legacy trigger handler: ' + handler);
+    }
+  });
+}
+
 /**
  * ⏰ [신설] JUSIK AI 2.0 코어 자동화 트리거를 자동 감지 및 복구 설치
  * 중복 트리거 설치를 방지하며, 누락된 스케줄 트리거를 즉시 자동 설치합니다.
@@ -1003,14 +1107,14 @@ function setupAppsScriptTriggers_() {
     }
     
     // 3. 퀀트 50대 우량주 DB 갱신 배치 (매일 새벽 3시 20분)
-    if (existingHandlers.indexOf('updateQuantUniverseDatabase') < 0) {
-      ScriptApp.newTrigger('updateQuantUniverseDatabase')
+    if (existingHandlers.indexOf('updateQuantUniverseDatabaseFast') < 0) {
+      ScriptApp.newTrigger('updateQuantUniverseDatabaseFast')
         .timeBased()
         .everyDays(1)
         .atHour(3)
         .nearMinute(20)
         .create();
-      console.log('Auto-installed updateQuantUniverseDatabase trigger');
+      console.log('Auto-installed updateQuantUniverseDatabaseFast trigger');
     }
 
     // 4. 월간 정기 리밸런싱 트리거 (매월 1일 새벽 1시)
