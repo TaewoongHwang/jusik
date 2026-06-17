@@ -1521,8 +1521,7 @@
       gap: 8px;
     }
 
-    #pwaToolbarLoginButton,
-    #supabaseSignOutButton {
+    #pwaToolbarLoginButton {
       display: none !important;
     }
 
@@ -1658,6 +1657,10 @@
 
     .supabase-signout-btn {
       display: none;
+    }
+
+    html.supabase-authenticated #supabaseSignOutButton {
+      display: inline-flex !important;
     }
 
     /* Apple Light Theme Overrides */
@@ -2584,6 +2587,10 @@
         initializePwaShell();
         return;
       }
+      if (window.JUSIK_REQUIRES_SUPABASE_AUTH && hasSupabaseLogoutRequest_()) {
+        await signOutSupabase({ reload: false });
+        removeLogoutQueryParam_();
+      }
       if (window.JUSIK_REQUIRES_SUPABASE_AUTH) {
         const authenticated = await initializeSupabaseAuthentication();
         if (!authenticated) return;
@@ -2604,6 +2611,7 @@
       window.supabaseClient.auth.onAuthStateChange(function (event, session) {
         if (event === 'SIGNED_OUT' || !session) {
           gate.classList.add('active');
+          document.documentElement.classList.remove('supabase-authenticated');
           document.getElementById('supabaseSignOutButton').style.display = 'none';
         }
       });
@@ -2632,6 +2640,7 @@
       }
 
       gate.classList.remove('active');
+      document.documentElement.classList.add('supabase-authenticated');
       document.getElementById('supabaseSignOutButton').style.display = 'inline-flex';
       return true;
     }
@@ -2725,10 +2734,33 @@
       status.textContent = '이메일로 보낸 로그인 링크를 열어 주세요.';
     }
 
-    async function signOutSupabase() {
-      if (!window.supabaseClient) return;
-      await window.supabaseClient.auth.signOut();
-      location.reload();
+    function hasSupabaseLogoutRequest_() {
+      return new URLSearchParams(location.search || '').get('logout') === '1';
+    }
+
+    function removeLogoutQueryParam_() {
+      try {
+        const url = new URL(location.href);
+        url.searchParams.delete('logout');
+        history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+      } catch(e) {}
+    }
+
+    async function signOutSupabase(options) {
+      const shouldReload = !(options && options.reload === false);
+      if (window.supabaseClient) {
+        await window.supabaseClient.auth.signOut();
+      }
+      document.documentElement.classList.remove('supabase-authenticated');
+      try {
+        Object.keys(localStorage).forEach(function(key) {
+          if (key.indexOf('supabase') >= 0 || key.indexOf('sb-') === 0) localStorage.removeItem(key);
+        });
+        Object.keys(sessionStorage).forEach(function(key) {
+          if (key.indexOf('supabase') >= 0 || key.indexOf('sb-') === 0 || key.indexOf('jusik_google_auto_login') === 0) sessionStorage.removeItem(key);
+        });
+      } catch(e) {}
+      if (shouldReload) location.reload();
     }
 
     (function setupPwaAppBarScrollBridge() {
