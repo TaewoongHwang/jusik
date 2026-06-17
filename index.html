@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#090d16">
-  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#f5f5f7">
+  <meta name="color-scheme" content="light">
   <title>JUSIK AI Portfolio Mini App</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
@@ -20,7 +20,13 @@
 
       try {
         if (supabaseUrl && supabaseUrl.indexOf("YOUR_") !== 0 && supabaseKey && supabaseKey.indexOf("YOUR_") !== 0) {
-          window.supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+          window.supabaseClient = supabase.createClient(supabaseUrl, supabaseKey, {
+            auth: {
+              persistSession: true,
+              autoRefreshToken: true,
+              detectSessionInUrl: true
+            }
+          });
           console.log("🚀 [Supabase] 실시간 데이터베이스 연동 활성화 완료.");
         } else {
           console.warn("⚠️ [Supabase] URL 또는 Anon Key가 설정되지 않아 Apps Script API로 폴백합니다.");
@@ -34,10 +40,8 @@
   <script>
     window.JUSIK_PRIVATE_DASHBOARD_URL = 'https://script.google.com/macros/s/AKfycbzNBBpzQDGet6ccuIE8EF72D1R61MS4qkdKxnw2lvoBs3radRiBnsiFy5I1zUWCl5hGCg/exec';
     window.JUSIK_IS_PWA_SHELL =
-      location.hostname === 'taewoonghwang.github.io' ||
-      (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && !location.hostname.includes('google')) ||
-      ((location.hostname === 'localhost' || location.hostname === '127.0.0.1') &&
-        new URLSearchParams(location.search).get('pwa') === '1');
+      new URLSearchParams(location.search).get('legacy_shell') === '1';
+    window.JUSIK_REQUIRES_SUPABASE_AUTH = !location.hostname.includes('google');
 
     if (window.JUSIK_IS_PWA_SHELL) {
       document.documentElement.classList.add('pwa-shell');
@@ -59,20 +63,23 @@
   <style>
     /* Premium CSS Variables & Reset */
     :root {
-      --bg-gradient: linear-gradient(135deg, #090d16 0%, #0f172a 100%);
-      --glass-bg: rgba(30, 41, 59, 0.6);
-      --glass-border: rgba(255, 255, 255, 0.08);
-      --glass-highlight: rgba(255, 255, 255, 0.03);
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
-      --accent-blue: #3b82f6;
-      --accent-purple: #8b5cf6;
-      --accent-yellow: #eab308;
-      --positive-red: #f43f5e;
-      --negative-red: #ef4444;
-      --negative-blue: #38bdf8;
-      --glass-blur: blur(16px);
-      --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      --bg-gradient:
+        radial-gradient(circle at 18% 0%, rgba(0, 122, 255, 0.14) 0%, transparent 34%),
+        radial-gradient(circle at 88% 8%, rgba(175, 82, 222, 0.10) 0%, transparent 30%),
+        linear-gradient(180deg, #fbfbfd 0%, #f5f5f7 45%, #eef1f6 100%);
+      --glass-bg: rgba(255, 255, 255, 0.78);
+      --glass-border: rgba(60, 60, 67, 0.12);
+      --glass-highlight: rgba(255, 255, 255, 0.92);
+      --text-primary: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --accent-blue: #007aff;
+      --accent-purple: #af52de;
+      --accent-yellow: #ffcc00;
+      --positive-red: #ff3b30;
+      --negative-red: #ff3b30;
+      --negative-blue: #007aff;
+      --glass-blur: blur(22px) saturate(180%);
+      --card-shadow: 0 18px 48px rgba(31, 35, 41, 0.10);
       --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
@@ -84,7 +91,7 @@
     }
 
     body {
-      font-family: 'Inter', -apple-system, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;
       background: var(--bg-gradient);
       color: var(--text-primary);
       min-height: 100vh;
@@ -347,6 +354,24 @@
 
     input:checked+.slider:before {
       transform: translateX(24px);
+    }
+
+    .switch .slider,
+    .switch .slider[style] {
+      background: rgba(229, 229, 234, 0.95) !important;
+      border: 1px solid rgba(60, 60, 67, 0.14) !important;
+      box-shadow: inset 0 1px 2px rgba(31, 35, 41, 0.08);
+    }
+
+    .switch .slider:before {
+      background: #ffffff !important;
+      box-shadow: 0 2px 8px rgba(31, 35, 41, 0.22);
+    }
+
+    .switch input:checked+.slider,
+    .switch input:checked+.slider[style] {
+      background: #34c759 !important;
+      border-color: rgba(52, 199, 89, 0.32) !important;
     }
 
     /* Custom TABS */
@@ -1254,6 +1279,10 @@
       color: var(--text-secondary);
       line-height: 1.45;
       word-break: keep-all;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     /* 📈 Premium Accordion Detail Panel & Sparkline Chart CSS */
@@ -1310,14 +1339,14 @@
       max-height: 0;
       overflow: hidden;
       transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease;
-      background: rgba(15, 23, 42, 0.4);
+      background: rgba(248, 250, 252, 0.82);
       padding: 0 16px;
-      border-top: 0 solid rgba(255, 255, 255, 0.03);
+      border-top: 0 solid rgba(60, 60, 67, 0.08);
     }
 
     .asset-detail-panel.active {
       padding: 16px;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      border-top: 1px solid rgba(60, 60, 67, 0.10);
     }
 
     .detail-grid {
@@ -1331,8 +1360,8 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.03);
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(60, 60, 67, 0.10);
       padding: 8px;
       border-radius: 10px;
     }
@@ -1351,8 +1380,8 @@
 
     /* 역사적 주가 차트 에어리어 */
     .detail-chart-sec {
-      background: rgba(255, 255, 255, 0.01);
-      border: 1px solid rgba(255, 255, 255, 0.03);
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(60, 60, 67, 0.10);
       border-radius: 12px;
       padding: 10px;
     }
@@ -1361,7 +1390,7 @@
       display: flex;
       gap: 6px;
       margin-bottom: 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid rgba(60, 60, 67, 0.10);
       padding-bottom: 6px;
     }
 
@@ -1428,7 +1457,7 @@
       min-height: 100%;
       overflow: hidden;
       padding: 0;
-      background: #090d16;
+      background: #f5f5f7;
     }
 
     html.pwa-shell body> :not(#pwaShell) {
@@ -1440,7 +1469,7 @@
       position: fixed;
       inset: 0;
       flex-direction: column;
-      background: #090d16;
+      background: #f5f5f7;
       z-index: 10000;
     }
 
@@ -1451,9 +1480,23 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      color: #f8fafc;
-      background: rgba(15, 23, 42, 0.96);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      color: #1d1d1f;
+      background: rgba(255, 255, 255, 0.88);
+      border-bottom: 1px solid rgba(60, 60, 67, 0.12);
+      box-shadow: 0 8px 24px rgba(31, 35, 41, 0.08);
+      backdrop-filter: blur(22px) saturate(180%);
+      -webkit-backdrop-filter: blur(22px) saturate(180%);
+      transform: translateY(0);
+      transition: transform 0.28s ease, opacity 0.28s ease, box-shadow 0.28s ease;
+      will-change: transform;
+      z-index: 2;
+    }
+
+    html.pwa-shell #pwaShell.app-bar-hidden .pwa-app-bar {
+      transform: translateY(calc(-100% - env(safe-area-inset-top)));
+      opacity: 0;
+      pointer-events: none;
+      box-shadow: none;
     }
 
     .pwa-app-title {
@@ -1477,12 +1520,17 @@
       gap: 8px;
     }
 
+    #pwaToolbarLoginButton,
+    #supabaseSignOutButton {
+      display: none !important;
+    }
+
     .pwa-toolbar button,
     .pwa-login-card button {
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(0, 122, 255, 0.18);
       border-radius: 10px;
-      color: #f8fafc;
-      background: rgba(59, 130, 246, 0.14);
+      color: #007aff;
+      background: rgba(0, 122, 255, 0.10);
       padding: 8px 11px;
       font: inherit;
       font-size: 0.75rem;
@@ -1494,7 +1542,7 @@
       width: 100%;
       flex: 1;
       border: 0;
-      background: #090d16;
+      background: #f5f5f7;
     }
 
     .pwa-login-card {
@@ -1510,18 +1558,18 @@
     .pwa-login-card>div {
       max-width: 360px;
       padding: 22px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(60, 60, 67, 0.12);
       border-radius: 18px;
-      color: #f8fafc;
-      background: rgba(15, 23, 42, 0.96);
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      color: #1d1d1f;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 18px 50px rgba(31, 35, 41, 0.12);
       text-align: center;
       pointer-events: auto;
     }
 
     .pwa-login-card p {
       margin: 9px 0 14px;
-      color: #94a3b8;
+      color: #6e6e73;
       font-size: 0.78rem;
       line-height: 1.55;
     }
@@ -1529,10 +1577,302 @@
     .pwa-login-card.hidden {
       display: none;
     }
+
+    .supabase-auth-gate {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: radial-gradient(circle at top, rgba(0, 122, 255, 0.16), transparent 42%), #f5f5f7;
+    }
+
+    .supabase-auth-gate.active {
+      display: flex;
+    }
+
+    .supabase-auth-card {
+      width: min(100%, 390px);
+      padding: 26px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 22px;
+      background: rgba(15, 23, 42, 0.96);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+      text-align: center;
+    }
+
+    .supabase-auth-card h2 {
+      margin-bottom: 10px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.25rem;
+    }
+
+    .supabase-auth-card p {
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      line-height: 1.55;
+    }
+
+    .supabase-auth-card input {
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 13px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      color: #f8fafc;
+      background: rgba(30, 41, 59, 0.8);
+      outline: none;
+    }
+
+    .supabase-auth-card button {
+      width: 100%;
+      padding: 13px 14px;
+      border: 0;
+      border-radius: 12px;
+      color: white;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .supabase-auth-status {
+      min-height: 20px;
+      margin-top: 12px;
+      color: #93c5fd;
+      font-size: 0.75rem;
+      line-height: 1.45;
+    }
+
+    .supabase-signout-btn {
+      display: none;
+    }
+
+    /* Apple Light Theme Overrides */
+    body {
+      color-scheme: light;
+    }
+
+    .header,
+    .summary-card,
+    .tabs-nav,
+    .accordion-item,
+    .news-card,
+    .asset-card-wrapper,
+    .asset-detail-panel,
+    .detail-metric,
+    .detail-chart-sec,
+    .weight-panel,
+    .dialog,
+    .modal-content,
+    .quant-modal-content,
+    .supabase-auth-card,
+    .pwa-login-card,
+    .pwa-app-bar {
+      background: rgba(255, 255, 255, 0.82) !important;
+      border-color: rgba(60, 60, 67, 0.12) !important;
+      box-shadow: var(--card-shadow) !important;
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+    }
+
+    .summary-card {
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(242, 247, 255, 0.88) 100%) !important;
+    }
+
+    .summary-card::before {
+      background: radial-gradient(circle, rgba(0, 122, 255, 0.14) 0%, transparent 70%);
+    }
+
+    .header-title,
+    .modal-header h3 {
+      background: linear-gradient(135deg, #1d1d1f 20%, #007aff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .tabs-nav {
+      background: rgba(242, 242, 247, 0.82) !important;
+      padding: 5px;
+    }
+
+    .tab-btn.active,
+    .sub-tab-btn.active {
+      background: rgba(255, 255, 255, 0.96) !important;
+      border-color: rgba(0, 122, 255, 0.18) !important;
+      color: #007aff !important;
+      box-shadow: 0 8px 20px rgba(0, 122, 255, 0.12) !important;
+    }
+
+    .metric-box,
+    .empty-state,
+    .asset-icon,
+    .asset-broker,
+    .summary-change,
+    .command-btn,
+    .command-code,
+    .readonly-input,
+    .modal-input,
+    .supabase-auth-card input,
+    .weight-slider,
+    .weight-summary-bar,
+    .gauge-bar-wrapper {
+      background: rgba(242, 242, 247, 0.72) !important;
+      border-color: rgba(60, 60, 67, 0.10) !important;
+      color: var(--text-primary) !important;
+    }
+
+    .asset-card {
+      background: rgba(255, 255, 255, 0.64) !important;
+      border: 1px solid rgba(60, 60, 67, 0.08) !important;
+      border-radius: 18px !important;
+      box-shadow: 0 8px 22px rgba(31, 35, 41, 0.05);
+    }
+
+    .asset-card:active,
+    .accordion-header:active,
+    .command-btn:active {
+      background: rgba(229, 229, 234, 0.72) !important;
+    }
+
+    .accordion-content,
+    .accordion-body,
+    .asset-detail-panel.active {
+      background: rgba(255, 255, 255, 0.50) !important;
+      border-color: rgba(60, 60, 67, 0.08) !important;
+    }
+
+    .detail-metric,
+    .detail-chart-sec {
+      background: rgba(255, 255, 255, 0.78) !important;
+      border-color: rgba(60, 60, 67, 0.10) !important;
+    }
+
+    .chart-tab-header {
+      border-color: rgba(60, 60, 67, 0.10) !important;
+    }
+
+    .chart-tab.active {
+      background: rgba(0, 122, 255, 0.10) !important;
+      color: #007aff !important;
+    }
+
+    .overlay,
+    .modal-overlay,
+    .quant-modal,
+    .supabase-auth-gate {
+      background:
+        radial-gradient(circle at top, rgba(0, 122, 255, 0.14), transparent 42%),
+        rgba(245, 245, 247, 0.74) !important;
+      backdrop-filter: blur(18px) saturate(160%);
+      -webkit-backdrop-filter: blur(18px) saturate(160%);
+    }
+
+    .modal-input::placeholder,
+    .supabase-auth-card input::placeholder {
+      color: #8e8e93;
+    }
+
+    .modal-btn-submit,
+    .supabase-auth-card button,
+    .fab-btn {
+      background: linear-gradient(135deg, #007aff 0%, #5856d6 100%) !important;
+      box-shadow: 0 12px 26px rgba(0, 122, 255, 0.24) !important;
+      color: #ffffff !important;
+    }
+
+    .modal-btn-clear {
+      background: rgba(255, 59, 48, 0.10) !important;
+      border-color: rgba(255, 59, 48, 0.20) !important;
+      color: #ff3b30 !important;
+    }
+
+    .mode-badge,
+    .news-source,
+    .badge-tx {
+      box-shadow: none !important;
+    }
+
+    .mode-badge.real {
+      background: rgba(255, 59, 48, 0.10);
+      border-color: rgba(255, 59, 48, 0.20);
+      color: #ff3b30;
+    }
+
+    .mode-badge.mock {
+      background: rgba(0, 122, 255, 0.10);
+      border-color: rgba(0, 122, 255, 0.20);
+      color: #007aff;
+    }
+
+    .news-card:hover {
+      border-color: rgba(0, 122, 255, 0.24) !important;
+      box-shadow: 0 14px 34px rgba(0, 122, 255, 0.14) !important;
+    }
+
+    .quant-modal-title,
+    .quant-modal-formula,
+    .weight-panel-header,
+    .modal-header {
+      border-color: rgba(60, 60, 67, 0.10) !important;
+    }
+
+    .quant-modal-title {
+      color: var(--text-primary) !important;
+    }
+
+    .quant-modal-formula {
+      background: rgba(242, 242, 247, 0.78) !important;
+      color: #5856d6 !important;
+    }
+
+    [style*="background: rgba(15, 23, 42"],
+    [style*="background:rgba(15, 23, 42"],
+    [style*="background: rgba(30, 41, 59"],
+    [style*="background:rgba(30, 41, 59"],
+    [style*="background: rgba(255, 255, 255, 0.02"],
+    [style*="background: rgba(255,255,255,0.02"],
+    [style*="background: rgba(255, 255, 255, 0.03"],
+    [style*="background: rgba(255,255,255,0.03"],
+    [style*="background: rgba(255, 255, 255, 0.04"],
+    [style*="background: rgba(255,255,255,0.04"] {
+      background: rgba(255, 255, 255, 0.72) !important;
+      border-color: rgba(60, 60, 67, 0.10) !important;
+    }
+
+    [style*="color: rgba(255,255,255"],
+    [style*="color: rgba(255, 255, 255"],
+    [style*="color:#fff"],
+    [style*="color: #fff"],
+    [style*="color: white"] {
+      color: var(--text-primary) !important;
+    }
+
+    [style*="border-top: 1px solid rgba(255,255,255"],
+    [style*="border-top: 1px solid rgba(255, 255, 255"],
+    [style*="border-bottom: 1px solid rgba(255,255,255"],
+    [style*="border-bottom: 1px solid rgba(255, 255, 255"],
+    [style*="border: 1px solid rgba(255,255,255"],
+    [style*="border: 1px solid rgba(255, 255, 255"] {
+      border-color: rgba(60, 60, 67, 0.10) !important;
+    }
   </style>
 </head>
 
 <body>
+  <div id="supabaseAuthGate" class="supabase-auth-gate" aria-live="polite">
+    <div class="supabase-auth-card">
+      <h2>JUSIK AI 보안 로그인</h2>
+      <p>등록된 소유자 계정으로만 포트폴리오 데이터를 볼 수 있습니다. 이메일로 받은 로그인 링크를 열어 주세요.</p>
+      <input id="supabaseAuthEmail" type="email" autocomplete="email" placeholder="소유자 이메일">
+      <button id="supabaseMagicLinkButton" type="button" onclick="sendSupabaseMagicLink()">로그인 링크 받기</button>
+      <div id="supabaseAuthStatus" class="supabase-auth-status"></div>
+    </div>
+  </div>
   <div id="pwaShell" aria-label="JUSIK AI 설치형 앱">
     <header class="pwa-app-bar">
       <div class="pwa-app-title">
@@ -1564,6 +1904,10 @@
         <i class="fa-solid fa-brain" style="color: var(--accent-blue)"></i> JUSIK AI Portfolio
       </div>
       <div style="display: flex; align-items: center; gap: 10px;">
+        <button id="supabaseSignOutButton" type="button" onclick="signOutSupabase()"
+          class="header-refresh-btn supabase-signout-btn" title="Supabase 로그아웃">
+          <i class="fa-solid fa-right-from-bracket"></i>
+        </button>
         <button id="refreshBtn" onclick="fetchPortfolioData(true)" class="header-refresh-btn" title="실시간 잔고 새로고침">
           <i class="fa-solid fa-arrows-rotate"></i>
         </button>
@@ -1737,10 +2081,20 @@
           <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4;">
             실시간 미국/한국 기준금리, 채권 금리, 외국인 수급 및 최신 경제 뉴스를 통합 융합 분석하여 최상의 자산 배분 리밸런싱 조언을 뿜어냅니다.
           </p>
-          <button class="command-btn" onclick="askAiForRebalancingAdvice(false)"
-            style="margin: 0 auto; background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-blue) 100%); border: none; padding: 10px 24px; border-radius: 12px; font-weight: 600; font-size: 0.8rem; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4); display: inline-flex; align-items: center; gap: 8px; transition: var(--transition-smooth);">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> AI 리밸런싱 조언 받기
-          </button>
+          <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;">
+            <button class="command-btn" onclick="askAiForRebalancingAdvice('cache_only')"
+              style="background: rgba(0,122,255,0.10); border: 1px solid rgba(0,122,255,0.18); color: var(--accent-blue); padding: 10px 14px; border-radius: 12px; font-weight: 700; font-size: 0.76rem; display: inline-flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-box-archive"></i> 오늘 조언 보기
+            </button>
+            <button class="command-btn" onclick="askAiForRebalancingAdvice('summary_only')"
+              style="background: rgba(52,199,89,0.10); border: 1px solid rgba(52,199,89,0.18); color: var(--positive-red); padding: 10px 14px; border-radius: 12px; font-weight: 700; font-size: 0.76rem; display: inline-flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-list-check"></i> 요약만 보기
+            </button>
+            <button class="command-btn" onclick="askAiForRebalancingAdvice(true)"
+              style="background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-blue) 100%); border: none; padding: 10px 16px; border-radius: 12px; font-weight: 700; font-size: 0.76rem; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.28); display: inline-flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> 새 조언 생성
+            </button>
+          </div>
         </div>
 
         <!-- 📝 AI 조언 결과물이 타이핑 렌더링될 곳 -->
@@ -2206,13 +2560,117 @@
     }
 
     // Load Data on Startup
-    document.addEventListener("DOMContentLoaded", function () {
+    document.addEventListener("DOMContentLoaded", async function () {
       if (window.JUSIK_IS_PWA_SHELL) {
         initializePwaShell();
         return;
       }
+      if (window.JUSIK_REQUIRES_SUPABASE_AUTH) {
+        const authenticated = await initializeSupabaseAuthentication();
+        if (!authenticated) return;
+      }
       fetchPortfolioData();
     });
+
+    async function initializeSupabaseAuthentication() {
+      const gate = document.getElementById('supabaseAuthGate');
+      const status = document.getElementById('supabaseAuthStatus');
+
+      if (!window.supabaseClient) {
+        gate.classList.add('active');
+        status.textContent = 'Supabase 연결 설정을 확인해 주세요.';
+        return false;
+      }
+
+      window.supabaseClient.auth.onAuthStateChange(function (event, session) {
+        if (event === 'SIGNED_OUT' || !session) {
+          gate.classList.add('active');
+          document.getElementById('supabaseSignOutButton').style.display = 'none';
+        }
+      });
+
+      const result = await window.supabaseClient.auth.getSession();
+      if (result.error) {
+        gate.classList.add('active');
+        status.textContent = '로그인 상태 확인 실패: ' + result.error.message;
+        return false;
+      }
+
+      const session = result.data && result.data.session;
+      if (!session) {
+        gate.classList.add('active');
+        return false;
+      }
+
+      const role = session.user && session.user.app_metadata && session.user.app_metadata.role;
+      if (role !== 'owner') {
+        gate.classList.add('active');
+        status.textContent = '이 계정에는 포트폴리오 소유자 권한이 없습니다.';
+        return false;
+      }
+
+      gate.classList.remove('active');
+      document.getElementById('supabaseSignOutButton').style.display = 'inline-flex';
+      return true;
+    }
+
+    async function sendSupabaseMagicLink() {
+      const emailInput = document.getElementById('supabaseAuthEmail');
+      const status = document.getElementById('supabaseAuthStatus');
+      const button = document.getElementById('supabaseMagicLinkButton');
+      const email = String(emailInput.value || '').trim();
+
+      if (!email || email.indexOf('@') < 1) {
+        status.textContent = '올바른 소유자 이메일을 입력해 주세요.';
+        return;
+      }
+
+      button.disabled = true;
+      status.textContent = '로그인 링크를 전송하고 있습니다...';
+      const result = await window.supabaseClient.auth.signInWithOtp({
+        email: email,
+        options: {
+          emailRedirectTo: location.origin + location.pathname
+        }
+      });
+      button.disabled = false;
+
+      if (result.error) {
+        status.textContent = '전송 실패: ' + result.error.message;
+        return;
+      }
+      status.textContent = '이메일로 보낸 로그인 링크를 열어 주세요.';
+    }
+
+    async function signOutSupabase() {
+      if (!window.supabaseClient) return;
+      await window.supabaseClient.auth.signOut();
+      location.reload();
+    }
+
+    (function setupPwaAppBarScrollBridge() {
+      var lastY = 0;
+      var lastDirection = 'top';
+      var ticking = false;
+      function postDirection() {
+        ticking = false;
+        var y = window.scrollY || document.documentElement.scrollTop || 0;
+        var direction = y < 24 ? 'top' : (y > lastY + 8 ? 'down' : (y < lastY - 8 ? 'up' : lastDirection));
+        if (direction !== lastDirection) {
+          lastDirection = direction;
+          try {
+            window.parent.postMessage({ type: 'jusik-scroll-direction', direction: direction }, '*');
+          } catch(e) {}
+        }
+        lastY = y;
+      }
+      window.addEventListener('scroll', function() {
+        if (!ticking) {
+          ticking = true;
+          window.requestAnimationFrame(postDirection);
+        }
+      }, { passive: true });
+    })();
 
     // Global PWA Service Worker Registration
     if ('serviceWorker' in navigator && !location.hostname.includes('google')) {
@@ -2225,6 +2683,7 @@
 
     function initializePwaShell() {
       const frame = document.getElementById('pwaDashboardFrame');
+      const shell = document.getElementById('pwaShell');
       const loginCard = document.getElementById('pwaLoginCard');
       const installButton = document.getElementById('pwaInstallButton');
       const toolbarLoginButton = document.getElementById('pwaToolbarLoginButton');
@@ -2247,8 +2706,16 @@
         window.open(window.JUSIK_PRIVATE_DASHBOARD_URL, '_blank', 'noopener');
       });
 
-      toolbarLoginButton.addEventListener('click', function () {
-        window.open(window.JUSIK_PRIVATE_DASHBOARD_URL, '_blank', 'noopener');
+      if (toolbarLoginButton) toolbarLoginButton.hidden = true;
+
+      window.addEventListener('message', function(event) {
+        if (!event.data || event.data.type !== 'jusik-scroll-direction') return;
+        if (!shell) return;
+        if (event.data.direction === 'down') {
+          shell.classList.add('app-bar-hidden');
+        } else if (event.data.direction === 'up' || event.data.direction === 'top') {
+          shell.classList.remove('app-bar-hidden');
+        }
       });
 
       window.addEventListener('beforeinstallprompt', function (event) {
@@ -2308,6 +2775,34 @@
       vaaBadge.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 연산 중...';
       factorList.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: var(--text-secondary);"><i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 8px; color: var(--accent-purple);"></i><div>실시간 팩터 점수 계산 중...</div></div>';
 
+      if (window.supabaseClient && !isForce) {
+        fetchQuantLabDataFromSupabase()
+          .then(function (res) {
+            if (res && res.success) {
+              if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+              lastQuantData = res;
+              onQuantDataLoaded(res);
+              return;
+            }
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+              fetchQuantLabDataFromAppsScript_(isForce, refreshIcon, vaaBadge, factorList);
+            } else {
+              if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+              onQuantDataLoaded({ success: false, error: 'Supabase quant_scores 캐시가 비어 있습니다. 퀀트 DB 배치를 먼저 실행해 주세요.' });
+            }
+          })
+          .catch(function (err) {
+            console.warn('[Supabase] quant_scores 로드 실패, Apps Script로 폴백합니다.', err);
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+              fetchQuantLabDataFromAppsScript_(isForce, refreshIcon, vaaBadge, factorList);
+            } else {
+              if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+              onQuantDataLoaded({ success: false, error: 'Supabase quant_scores 조회 실패: ' + err.message });
+            }
+          });
+        return;
+      }
+
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function (res) {
@@ -2357,6 +2852,122 @@
           onQuantDataLoaded(mockRes);
         }, 1000);
       }
+    }
+
+    async function fetchQuantLabDataFromSupabase() {
+      const [settingsRes, scoresRes] = await Promise.all([
+        window.supabaseClient
+          .from('settings')
+          .select('key,value,updated_at')
+          .in('key', ['quant_scores_updated_at', 'quant_scores_date', 'quant_vaa_payload']),
+        window.supabaseClient
+          .from('quant_scores')
+          .select('*')
+          .order('quant_score', { ascending: false })
+          .limit(500)
+      ]);
+
+      if (settingsRes.error) throw settingsRes.error;
+      if (scoresRes.error) throw scoresRes.error;
+
+      const rows = scoresRes.data || [];
+      if (rows.length === 0) return null;
+
+      const metrics = {};
+      (settingsRes.data || []).forEach(row => {
+        metrics[row.key] = row.value;
+      });
+
+      const mapped = rows.map(mapSupabaseQuantScoreRow_);
+      const holdingsSymbols = new Set((localPortfolioData && localPortfolioData.assets ? localPortfolioData.assets : [])
+        .filter(a => a && a.symbol && a.symbol !== 'CASH')
+        .map(a => String(a.symbol).trim().toUpperCase()));
+
+      const portfolioScoring = mapped.filter(row => holdingsSymbols.has(String(row.symbol).trim().toUpperCase()));
+      const domesticScoring = mapped.filter(row => row.market === 'KR');
+      const usScoring = mapped.filter(row => row.market === 'US');
+
+      let vaa = null;
+      try {
+        vaa = metrics.quant_vaa_payload ? JSON.parse(metrics.quant_vaa_payload) : null;
+      } catch(e) {
+        vaa = null;
+      }
+      if (!vaa) {
+        vaa = {
+          regime: 'DEFENSIVE',
+          recommended_symbol: 'SHY',
+          recommended_score: 0,
+          aggressive_scores: [],
+          defensive_scores: []
+        };
+      }
+
+      return {
+        success: true,
+        source: 'supabase',
+        timestamp: 'Supabase DB 캐시: ' + (metrics.quant_scores_date || 'N/A'),
+        vaa: vaa,
+        scoring: portfolioScoring,
+        domesticScoring: domesticScoring,
+        usScoring: usScoring
+      };
+    }
+
+    function mapSupabaseQuantScoreRow_(row) {
+      function num(value, fallback) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+      }
+      function text(value) {
+        return value === null || value === undefined || value === '' ? 'N/A' : value;
+      }
+      const symbol = String(row.symbol || '').trim().toUpperCase();
+      return {
+        symbol: symbol,
+        market: row.market || (/^[0-9]/.test(symbol) ? 'KR' : 'US'),
+        name: row.name || symbol,
+        price: num(row.price, 0),
+        per: text(row.per),
+        pbr: text(row.pbr),
+        gpa: text(row.gpa),
+        momentum_pct: num(row.momentum_pct, 0),
+        momentum_val: num(row.momentum_val, num(row.momentum_pct, 0)),
+        rsi: num(row.rsi, 50),
+        roe: text(row.roe),
+        debt: text(row.debt),
+        div_yield: num(row.div_yield, 0),
+        beta: num(row.beta, 1),
+        peg: text(row.peg),
+        srim_price: text(row.srim_price),
+        safety_margin: text(row.safety_margin),
+        is_etf: row.is_etf === true,
+        quant_score: num(row.quant_score, 0),
+        per_val: num(row.per_val, 9999),
+        pbr_val: num(row.pbr_val, 9999),
+        gpa_val: num(row.gpa_val, 0),
+        roe_val: num(row.roe_val, -9999),
+        debt_val: num(row.debt_val, 9999),
+        div_yield_val: num(row.div_yield_val, 0),
+        beta_val: num(row.beta_val, 1),
+        peg_val: num(row.peg_val, 9999)
+      };
+    }
+
+    function fetchQuantLabDataFromAppsScript_(isForce, refreshIcon, vaaBadge, factorList) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+          lastQuantData = res;
+          onQuantDataLoaded(res);
+        })
+        .withFailureHandler(function (err) {
+          if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+          console.error(err);
+          vaaBadge.innerText = '계산 실패';
+          factorList.innerHTML = `<div style="padding: 40px 20px; text-align: center; color: var(--negative-red);"><i class="fa-solid fa-triangle-exclamation"></i> 에러: ${err.message}</div>`;
+        })
+        .getQuantLabDataForWeb(isForce);
     }
 
     // ⚙️ 퀀트 데이터 로드 성공 핸들러
@@ -2675,8 +3286,12 @@
       try {
         // 1. settings와 holdings 테이블을 동시에 비동기 조회
         const [settingsRes, holdingsRes] = await Promise.all([
-          window.supabaseClient.from('settings').select('*'),
-          window.supabaseClient.from('holdings').select('*')
+          window.supabaseClient
+            .from('settings')
+            .select('key,value,updated_at'),
+          window.supabaseClient
+            .from('holdings')
+            .select('symbol,name,quantity,avg_price,current_price,purchase_amount,eval_amount,profit_loss_amount,profit_loss_pct,portfolio_weight_pct,source,currency,change_pct,updated_at')
         ]);
 
         if (settingsRes.error) throw settingsRes.error;
@@ -2705,6 +3320,13 @@
           const curPrice = Number(h.current_price || 0);
           const pAmt = Number(h.purchase_amount || 0);
           const eAmt = Number(h.eval_amount || 0);
+          const usdRate = Number(metrics['portfolio_usd_rate'] || 0) || 1350;
+          const priceKrw = isUsd
+            ? (pAmt > 0 && qty > 0 ? Math.round(pAmt / qty) : Math.round(price * usdRate))
+            : price;
+          const currentPriceKrw = isUsd
+            ? (eAmt > 0 && qty > 0 ? Math.round(eAmt / qty) : Math.round(curPrice * usdRate))
+            : curPrice;
 
           return {
             broker: h.source,
@@ -2713,8 +3335,8 @@
             qty: qty,
             price: price,
             currentPrice: curPrice,
-            priceKrw: isUsd ? Math.round(pAmt / (qty || 1)) : price,
-            currentPriceKrw: isUsd ? Math.round(eAmt / (qty || 1)) : curPrice,
+            priceKrw: priceKrw,
+            currentPriceKrw: currentPriceKrw,
             isCoin: (h.source.toLowerCase().indexOf('upbit') >= 0 || h.source.toLowerCase().indexOf('coin') >= 0),
             isUsd: isUsd,
             changePct: Number(h.change_pct || 0),
@@ -2734,6 +3356,7 @@
           totalProfitLoss: Math.round(Number(metrics['portfolio_total_profit_loss'] || 0)),
           percentChange: Number(metrics['portfolio_percent_change'] || 0),
           currentMode: metrics['portfolio_current_mode'] || 'REAL',
+          usdRate: Number(metrics['portfolio_usd_rate'] || 0) || 1350,
           totalCash: Math.round(Number(metrics['portfolio_total_cash'] || 0)),
           totalRealizedPl: Math.round(Number(metrics['portfolio_total_realized_pl'] || 0)),
           assets: assets
@@ -3785,6 +4408,7 @@
         card.className = "news-card";
         card.href = item.link;
         card.target = "_blank";
+        const desc = item.description || item.summary || '기사 요약을 불러오는 중입니다. 제목을 눌러 원문을 확인할 수 있습니다.';
 
         card.innerHTML = `
           <div class="news-header-sec">
@@ -3792,7 +4416,7 @@
             <span class="news-time"><i class="fa-regular fa-clock"></i> ${escapeHtml(item.pubDate)}</span>
           </div>
           <div class="news-title">${escapeHtml(item.title)}</div>
-          <div class="news-desc">${escapeHtml(item.description)}</div>
+          <div class="news-desc">${escapeHtml(desc)}</div>
         `;
         container.appendChild(card);
       });
@@ -3871,17 +4495,20 @@
         return;
       }
 
-      const prices = history.map(p => Number(p));
+      const usdRate = (localPortfolioData && localPortfolioData.usdRate) || 1350;
+      const showUsdChart = asset.isUsd && currentCurrency === 'USD';
+      const prices = history.map(p => showUsdChart ? (Number(p) / usdRate) : Number(p));
       const minPrice = Math.min(...prices);
       const maxPrice = Math.max(...prices);
 
       const minLabel = document.getElementById(`spark-min-${uniqueKey}`);
       const maxLabel = document.getElementById(`spark-max-${uniqueKey}`);
-      const isUsd = asset.isUsd;
-      const currencySign = isUsd ? '$' : '₩';
+      const currencySign = showUsdChart ? '$' : '₩';
+      const labelLocale = showUsdChart ? 'en-US' : 'ko-KR';
+      const labelDigits = showUsdChart ? 2 : 0;
 
-      if (minLabel) minLabel.innerText = `최저: ${currencySign}${minPrice.toLocaleString('ko-KR')}`;
-      if (maxLabel) maxLabel.innerText = `최고: ${currencySign}${maxPrice.toLocaleString('ko-KR')}`;
+      if (minLabel) minLabel.innerText = `최저: ${currencySign}${minPrice.toLocaleString(labelLocale, { minimumFractionDigits: labelDigits, maximumFractionDigits: labelDigits })}`;
+      if (maxLabel) maxLabel.innerText = `최고: ${currencySign}${maxPrice.toLocaleString(labelLocale, { minimumFractionDigits: labelDigits, maximumFractionDigits: labelDigits })}`;
 
       const width = 300;
       const height = 64;
@@ -4364,6 +4991,15 @@
     function askAiForRebalancingAdvice(force) {
       const panel = document.getElementById("aiAdviceResultPanel");
       if (!panel) return;
+      const mode = (force === true || force === 'true') ? true : (force === 'summary_only' ? 'summary_only' : 'cache_only');
+      const loadingText = mode === true
+        ? 'Gemini API를 호출해 새 리밸런싱 자문을 생성하고 있습니다. 비용 방지를 위해 쿨다운과 하루 생성 한도가 적용됩니다...'
+        : (mode === 'summary_only'
+          ? 'API 호출 없이 보유자산, VAA, 퀀트 캐시 요약을 불러오는 중입니다...'
+          : 'API 호출 없이 오늘 저장된 AI 조언 캐시를 불러오는 중입니다...');
+      if (mode === true && !window.confirm('새 AI 리밸런싱 조언을 생성할까요? Gemini API가 1회 호출되며, 쿨다운과 하루 생성 한도가 적용됩니다.')) {
+        return;
+      }
 
       panel.style.display = "block";
       panel.innerHTML = `
@@ -4381,12 +5017,16 @@
             if (res && res.advice) {
               // 💡 [정제 필터] cleanAiResponse_로 백틱/마크다운/HTML 엔티티 통합 정제
               let safeHtml = cleanAiResponse_(res.advice);
+              const cacheNotice = res.throttled
+                ? `<div style="margin-bottom: 10px; padding: 9px 10px; border-radius: 10px; background: rgba(0,122,255,0.08); border: 1px solid rgba(0,122,255,0.16); color: var(--accent-blue); font-size: 0.72rem; font-weight: 700;">API 과호출 방지를 위해 ${res.cooldownMinutes || 60}분 쿨다운 중입니다. 저장된 오늘의 AI 조언을 다시 표시합니다.</div>`
+                : '';
 
               panel.innerHTML = `
                 <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(139, 92, 246, 0.15); border-radius: 12px; padding: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);">
                   <div style="font-size: 0.85rem; font-weight: 700; color: var(--accent-purple); display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
                     <i class="fa-solid fa-square-poll-vertical"></i> 월스트리트 헤지펀드 AI 퀀트 자문서
                   </div>
+                  ${cacheNotice}
                   <div style="color: var(--text-primary); line-height: 1.6; font-size: 0.8rem; word-break: keep-all;">
                     ${safeHtml}
                   </div>
@@ -4420,7 +5060,7 @@
               panel.innerHTML = `<div class="empty-state" style="color: var(--negative-blue);">네트워크 오류가 감지되었습니다: ${errMsg}</div>`;
             }
           })
-          .getAiPortfolioAdviceForWeb(force);
+          .getAiPortfolioAdviceForWeb(mode);
       } else {
         // Local preview fallback mockup
         setTimeout(() => {

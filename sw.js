@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jusik-ai-shell-v1';
+const CACHE_NAME = 'jusik-ai-shell-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -32,15 +32,20 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (event.request.mode === 'navigate') {
+  const isShellRequest =
+    event.request.mode === 'navigate' ||
+    requestUrl.pathname.endsWith('/') ||
+    requestUrl.pathname.endsWith('/index.html');
+
+  if (isShellRequest) {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-store' })
         .then(response => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put('./', copy));
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => caches.match('./'))
+        .catch(() => caches.match(event.request).then(cached => cached || caches.match('./')))
     );
     return;
   }
