@@ -3377,8 +3377,8 @@
             .select('symbol,name,quantity,avg_price,current_price,purchase_amount,eval_amount,profit_loss_amount,profit_loss_pct,portfolio_weight_pct,source,currency,change_pct,updated_at')
         ]);
 
-        if (settingsRes.error) throw settingsRes.error;
-        if (holdingsRes.error) throw holdingsRes.error;
+        if (settingsRes.error) throw new Error(formatSupabaseError_('settings', settingsRes.error));
+        if (holdingsRes.error) throw new Error(formatSupabaseError_('holdings', holdingsRes.error));
 
         const settingsData = settingsRes.data || [];
         const holdingsData = holdingsRes.data || [];
@@ -3451,8 +3451,17 @@
 
       } catch (err) {
         console.warn("❌ [Supabase] 데이터 로드 실패, Apps Script API로 폴백합니다:", err);
+        showHUD('loading', 'Supabase 데이터 조회 실패', (err.message || String(err)) + ' / Apps Script API로 다시 시도합니다...');
         fetchPortfolioDataFromAppsScript(false);
       }
+    }
+
+    function formatSupabaseError_(tableName, error) {
+      const code = error && error.code ? ' [' + error.code + ']' : '';
+      const message = error && error.message ? error.message : String(error || 'Unknown error');
+      const details = error && error.details ? ' / ' + error.details : '';
+      const hint = error && error.hint ? ' / hint: ' + error.hint : '';
+      return 'Supabase ' + tableName + ' 조회 실패' + code + ': ' + message + details + hint;
     }
 
     function fetchPortfolioDataFromAppsScript(isForce) {
