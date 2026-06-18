@@ -277,9 +277,10 @@ function syncQuantScoresToSupabase_(scores, dateText, vaaPayload) {
 
   if (rows.length > 0) {
     try {
-      var insertResponse = UrlFetchApp.fetch(supabaseUrl + '/rest/v1/quant_scores', {
+      var quantHeaders = Object.assign({}, headers, { 'Prefer': 'resolution=merge-duplicates' });
+      var insertResponse = UrlFetchApp.fetch(supabaseUrl + '/rest/v1/quant_scores?on_conflict=symbol', {
         method: 'post',
-        headers: headers,
+        headers: quantHeaders,
         payload: JSON.stringify(rows),
         muteHttpExceptions: true
       });
@@ -309,7 +310,7 @@ function syncQuantScoresToSupabase_(scores, dateText, vaaPayload) {
     }
 
     var settingsHeaders = Object.assign({}, headers, { 'Prefer': 'resolution=merge-duplicates' });
-    var settingsResponse = UrlFetchApp.fetch(supabaseUrl + '/rest/v1/settings', {
+    var settingsResponse = UrlFetchApp.fetch(supabaseUrl + '/rest/v1/settings?on_conflict=key', {
       method: 'post',
       headers: settingsHeaders,
       payload: JSON.stringify(settingsPayload),
