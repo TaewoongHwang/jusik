@@ -104,7 +104,7 @@ function syncPortfolioToSupabase_(payload) {
     try {
       var insertUrl = supabaseUrl + '/rest/v1/holdings?on_conflict=source,symbol';
       var insertHeaders = Object.assign({}, headers, {
-        'Prefer': 'resolution=merge-dup'
+        'Prefer': 'resolution=merge-duplicates'
       });
       var insertOptions = {
         method: 'post',
@@ -152,7 +152,7 @@ function syncPortfolioToSupabase_(payload) {
     
     // PostgREST에서 Upsert(ON CONFLICT DO UPDATE)를 수행하기 위해 Prefer 헤더를 삽입합니다.
     var settingsHeaders = Object.assign({}, headers, {
-      'Prefer': 'resolution=merge-dup'
+      'Prefer': 'resolution=merge-duplicates'
     });
     
     var settingsOptions = {
@@ -289,7 +289,7 @@ function syncQuantScoresToSupabase_(scores, dateText, vaaPayload) {
       });
     }
 
-    var settingsHeaders = Object.assign({}, headers, { 'Prefer': 'resolution=merge-dup' });
+    var settingsHeaders = Object.assign({}, headers, { 'Prefer': 'resolution=merge-duplicates' });
     var settingsResponse = UrlFetchApp.fetch(supabaseUrl + '/rest/v1/settings', {
       method: 'post',
       headers: settingsHeaders,
