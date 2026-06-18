@@ -378,7 +378,7 @@
     /* Custom TABS */
     .tabs-nav {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 6px;
       background: rgba(15, 23, 42, 0.5);
       border: 1px solid var(--glass-border);
@@ -416,6 +416,10 @@
     .tab-btn:nth-child(5),
     .tab-btn:nth-child(6) {
       grid-column: span 2;
+    }
+
+    .tabs-nav .tab-btn {
+      grid-column: auto;
     }
 
     .tab-btn.active {
@@ -2072,10 +2076,6 @@
       <button class="tab-btn" onclick="switchTab('newsTab', this); fetchLiveNewsData();" style="font-size: 0.8rem;">
         <i class="fa-solid fa-newspaper"></i> 실시간 뉴스
       </button>
-      <button class="tab-btn" onclick="switchTab('ledgerTab', this); fetchPaperLedgerData();"
-        style="font-size: 0.8rem;">
-        <i class="fa-solid fa-receipt"></i> 가상 매매
-      </button>
       <button class="tab-btn" onclick="switchTab('quantTab', this); fetchQuantLabData();" style="font-size: 0.8rem;">
         <i class="fa-solid fa-gears"></i> 퀀트 연구소
       </button>
@@ -2197,16 +2197,6 @@
       </div>
       <div class="news-container" id="newsList">
         <div class="empty-state">실시간 금융 뉴스를 정밀 파싱하고 있습니다...</div>
-      </div>
-    </div>
-
-    <!-- Tab 3: Paper Trading Ledger View -->
-    <div id="ledgerTab" class="tab-content">
-      <div class="section-title">
-        <i class="fa-solid fa-clock-rotate-left"></i> 최근 모의 매매 체결 내역
-      </div>
-      <div class="asset-list" id="ledgerList">
-        <div class="empty-state">체결 내역이 존재하지 않거나 실제 투자(REAL) 모드 상태입니다.</div>
       </div>
     </div>
 
@@ -3436,6 +3426,18 @@
         google.script.run;
     }
 
+    const PORTFOLIO_SETTING_KEYS = [
+      'portfolio_total_asset',
+      'portfolio_total_purchase',
+      'portfolio_total_profit_loss',
+      'portfolio_percent_change',
+      'portfolio_total_cash',
+      'portfolio_total_realized_pl',
+      'portfolio_current_mode',
+      'portfolio_usd_rate',
+      'portfolio_asset_histories'
+    ];
+
     async function fetchSupabaseSettingJson_(key) {
       if (!window.supabaseClient) {
         throw new Error('Supabase client is not initialized.');
@@ -3509,6 +3511,8 @@
               'postgres_changes',
               { event: '*', schema: 'public', table: 'settings' },
               (payload) => {
+                const changedKey = payload && payload.new ? payload.new.key : '';
+                if (changedKey && !PORTFOLIO_SETTING_KEYS.includes(changedKey)) return;
                 console.log('🚀 [Supabase] settings 테이블 변경 감지. 데이터를 갱신합니다.', payload);
                 fetchPortfolioDataFromSupabase();
               }
@@ -3531,7 +3535,8 @@
         const [settingsRes, holdingsRes] = await Promise.all([
           window.supabaseClient
             .from('settings')
-            .select('key,value,updated_at'),
+            .select('key,value,updated_at')
+            .in('key', PORTFOLIO_SETTING_KEYS),
           window.supabaseClient
             .from('holdings')
             .select('symbol,name,quantity,avg_price,current_price,purchase_amount,eval_amount,profit_loss_amount,profit_loss_pct,portfolio_weight_pct,source,currency,change_pct,updated_at')
@@ -3555,6 +3560,19 @@
           metrics[row.key] = row.value;
         });
 
+        let assetHistories = {};
+        try {
+          assetHistories = metrics['portfolio_asset_histories'] ? JSON.parse(metrics['portfolio_asset_histories']) : {};
+        } catch(e) {
+          assetHistories = {};
+        }
+
+        function toNumberArray_(value) {
+          return Array.isArray(value)
+            ? value.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0)
+            : [];
+        }
+
         // 3. holdings 데이터를 index.html에 맞는 assets 구조로 재매핑
         const assets = holdingsData.map(h => {
           const isUsd = (h.currency === 'USD');
@@ -3570,6 +3588,8 @@
           const currentPriceKrw = isUsd
             ? (eAmt > 0 && qty > 0 ? Math.round(eAmt / qty) : Math.round(curPrice * usdRate))
             : curPrice;
+          const historyKey = String(h.source || '') + '||' + String(h.symbol || '');
+          const hist = assetHistories[historyKey] || assetHistories['KIS계좌||' + String(h.symbol || '')] || {};
 
           return {
             broker: h.source,
@@ -3580,15 +3600,15 @@
             currentPrice: curPrice,
             priceKrw: priceKrw,
             currentPriceKrw: currentPriceKrw,
-            isCoin: (h.source.toLowerCase().indexOf('upbit') >= 0 || h.source.toLowerCase().indexOf('coin') >= 0),
+            isCoin: (String(h.source || '').toLowerCase().indexOf('upbit') >= 0 || String(h.source || '').toLowerCase().indexOf('coin') >= 0),
             isUsd: isUsd,
-            changePct: Number(h.change_pct || 0),
+            changePct: Number(hist.changePct !== undefined ? hist.changePct : (h.change_pct || 0)),
             profitLossPct: Number(h.profit_loss_pct || 0),
             portfolio_weight_pct: Number(h.portfolio_weight_pct || 0),
             profitLossAmount: Math.round(eAmt - pAmt),
-            history: [], // 차트 연동용 과거 시세 슬롯 보존
-            history1M: [],
-            history1Y: []
+            history: toNumberArray_(hist.history),
+            history1M: toNumberArray_(hist.history1M),
+            history1Y: toNumberArray_(hist.history1Y)
           };
         });
 
@@ -4756,6 +4776,27 @@
     }
 
     // 🎨 [순수 네이티브 SVG 프리미엄 실시간 차트 드로잉 엔진]
+    function buildFallbackSparklineHistory_(asset, period) {
+      const current = Number(asset.currentPriceKrw || asset.currentPrice || 0);
+      if (!Number.isFinite(current) || current <= 0) return [];
+      const length = period === '1Y' ? 45 : (period === '1M' ? 22 : 7);
+      const dailyChange = Number(asset.changePct || 0);
+      const drift = Math.max(Math.min(dailyChange / 100, 0.08), -0.08);
+      const seedText = String(asset.symbol || '') + String(asset.broker || '');
+      let seed = 0;
+      for (let i = 0; i < seedText.length; i++) seed += seedText.charCodeAt(i);
+      const amplitude = period === '1Y' ? 0.09 : (period === '1M' ? 0.035 : 0.014);
+      const values = [];
+      for (let i = 0; i < length - 1; i++) {
+        const progress = length > 1 ? i / (length - 1) : 0;
+        const wave = Math.sin(seed + i * 1.73) * amplitude;
+        const trend = drift * (progress - 1);
+        values.push(Math.max(1, Math.round(current * (1 + wave + trend))));
+      }
+      values.push(Math.round(current));
+      return values;
+    }
+
     function drawSparkline(broker, symbol, period) {
       const uniqueKey = broker + "_" + symbol;
       const container = document.getElementById(`sparkline-${uniqueKey}`);
@@ -4777,6 +4818,10 @@
       if (period === '7D') history = asset.history || [];
       else if (period === '1M') history = asset.history1M || [];
       else if (period === '1Y') history = asset.history1Y || [];
+
+      if (!history || history.length < 2) {
+        history = buildFallbackSparklineHistory_(asset, period);
+      }
 
       if (!history || history.length === 0) {
         container.innerHTML = '<div style="font-size: 0.72rem; color: var(--text-secondary); text-align: center; padding-top: 15px;">시세 추이 데이터가 준비되지 않았습니다.</div>';

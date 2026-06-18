@@ -147,6 +147,25 @@ function syncPortfolioToSupabase_(payload) {
     updated_at: todayIso
   });
 
+  var historyMap = {};
+  (payload.assets || []).forEach(function(a) {
+    if (!a || !a.symbol || a.symbol === 'CASH') return;
+    var key = String(a.broker || 'KIS계좌') + '||' + String(a.symbol || '');
+    historyMap[key] = {
+      history: Array.isArray(a.history) ? a.history.slice(-7) : [],
+      history1M: Array.isArray(a.history1M) ? a.history1M.slice(-30) : [],
+      history1Y: Array.isArray(a.history1Y) ? a.history1Y.slice(-260) : [],
+      changePct: a.changePct || 0
+    };
+  });
+
+  settingsPayload.push({
+    key: 'portfolio_asset_histories',
+    value: JSON.stringify(historyMap),
+    description: 'Compact chart history cache keyed by broker and symbol',
+    updated_at: todayIso
+  });
+
   try {
     var settingsUrl = supabaseUrl + '/rest/v1/settings?on_conflict=key';
     
@@ -383,7 +402,6 @@ function syncDashboardExtrasToSupabase_() {
     ok: true,
     settings: null,
     newsCount: 0,
-    ledgerCount: 0,
     aiAdviceCached: false,
     errors: []
   };
@@ -411,21 +429,6 @@ function syncDashboardExtrasToSupabase_() {
   } catch(newsErr) {
     result.ok = false;
     result.errors.push('news: ' + (newsErr.message || String(newsErr)));
-  }
-
-  try {
-    var ledger = getPaperLedgerDataForWeb() || [];
-    result.ledgerCount = ledger.length;
-    pushJsonSetting_('paper_ledger_payload', ledger, 'Latest paper trading ledger payload for GitHub Pages dashboard');
-    rows.push({
-      key: 'paper_ledger_updated_at',
-      value: nowIso,
-      description: 'Latest paper trading ledger cache timestamp',
-      updated_at: nowIso
-    });
-  } catch(ledgerErr) {
-    result.ok = false;
-    result.errors.push('ledger: ' + (ledgerErr.message || String(ledgerErr)));
   }
 
   try {
@@ -586,7 +589,6 @@ function menuForceSyncSupabasePortfolio() {
         'settings upsert HTTP: ' + (result.syncResult ? result.syncResult.settingsUpsertCode : 'N/A'),
         'extras sync ok: ' + (result.extrasResult && result.extrasResult.ok),
         'news rows: ' + (result.extrasResult ? result.extrasResult.newsCount : 'N/A'),
-        'ledger rows: ' + (result.extrasResult ? result.extrasResult.ledgerCount : 'N/A'),
         'AI cache: ' + (result.extrasResult && result.extrasResult.aiAdviceCached ? 'cached' : 'empty'),
         'extras settings HTTP: ' + (result.extrasResult && result.extrasResult.settings ? result.extrasResult.settings.code : 'N/A'),
         'holdings rows: ' + (result.counts.holdings.count === null ? JSON.stringify(result.counts.holdings) : result.counts.holdings.count),
@@ -612,7 +614,6 @@ function menuSyncSupabaseDashboardExtras() {
       [
         'sync ok: ' + result.ok,
         'news rows: ' + result.newsCount,
-        'ledger rows: ' + result.ledgerCount,
         'AI cache: ' + (result.aiAdviceCached ? 'cached' : 'empty'),
         'settings HTTP: ' + (result.settings ? result.settings.code : 'N/A'),
         'settings rows: ' + (result.settings ? result.settings.rows : 'N/A'),
