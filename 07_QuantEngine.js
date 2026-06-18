@@ -158,6 +158,63 @@ function getQuantFundamentalDb_() {
 // 하위 호환성 유지: 기존 직접 참조를 유지하면서도 동적 로딩 함수 사용 유도
 var AM_QUANT_FUNDAMENTAL_DB = AM_QUANT_FUNDAMENTAL_DB_STATIC_;
 
+// Extended large-cap universe overlay. These are screening candidates, not recommendations.
+var AM_QUANT_FUNDAMENTAL_DB_EXTENDED_ = {
+  '006400': { eps: 9800, bps: 205000, div: 1000, grow: 10, debt: 80, beta: 1.15, gpa: 0.10 },
+  '066570': { eps: 8200, bps: 118000, div: 1200, grow: 6, debt: 130, beta: 1.05, gpa: 0.14 },
+  '051900': { eps: 12000, bps: 290000, div: 3500, grow: 3, debt: 35, beta: 0.62, gpa: 0.24 },
+  '138040': { eps: 9500, bps: 36000, div: 2360, grow: 8, debt: 110, beta: 0.90, gpa: 0.04 },
+  '316140': { eps: 4200, bps: 43000, div: 1000, grow: 5, debt: 115, beta: 0.82, gpa: 0.03 },
+  '024110': { eps: 3800, bps: 43000, div: 950, grow: 4, debt: 120, beta: 0.78, gpa: 0.03 },
+  '086520': { eps: 2600, bps: 42000, div: 0, grow: 18, debt: 70, beta: 1.55, gpa: 0.08 },
+  '247540': { eps: 1300, bps: 25000, div: 0, grow: 20, debt: 85, beta: 1.65, gpa: 0.10 },
+  '402340': { eps: 3200, bps: 98000, div: 0, grow: 9, debt: 22, beta: 1.18, gpa: 0.05 },
+  '267260': { eps: 12000, bps: 52000, div: 1200, grow: 24, debt: 95, beta: 1.35, gpa: 0.16 },
+  '267250': { eps: 7200, bps: 93000, div: 4600, grow: 6, debt: 115, beta: 0.95, gpa: 0.09 },
+  '010120': { eps: 8500, bps: 62000, div: 2800, grow: 16, debt: 75, beta: 1.15, gpa: 0.18 },
+  '021240': { eps: 6200, bps: 48000, div: 1350, grow: 5, debt: 35, beta: 0.72, gpa: 0.22 },
+  '161390': { eps: 5200, bps: 72000, div: 800, grow: 5, debt: 45, beta: 0.95, gpa: 0.13 },
+  '078930': { eps: 10500, bps: 128000, div: 2500, grow: 4, debt: 70, beta: 0.92, gpa: 0.08 },
+  '006800': { eps: 6500, bps: 112000, div: 2000, grow: 6, debt: 105, beta: 1.05, gpa: 0.04 },
+  '005940': { eps: 5200, bps: 38000, div: 1050, grow: 5, debt: 95, beta: 0.95, gpa: 0.04 },
+  '000150': { eps: 9000, bps: 128000, div: 2000, grow: 10, debt: 160, beta: 1.20, gpa: 0.09 },
+  '241560': { eps: 5600, bps: 42000, div: 1600, grow: 7, debt: 75, beta: 0.90, gpa: 0.12 },
+  '036460': { eps: 7600, bps: 124000, div: 1500, grow: 3, debt: 240, beta: 0.75, gpa: 0.04 },
+  'TSM': { eps: 6.2, bps: 25.0, div: 2.40, grow: 18, debt: 25, beta: 1.10, gpa: 0.42 },
+  'BRK-B': { eps: 24.0, bps: 270.0, div: 0.00, grow: 8, debt: 30, beta: 0.85, gpa: 0.12 },
+  'PLTR': { eps: 0.45, bps: 3.2, div: 0.00, grow: 25, debt: 8, beta: 1.70, gpa: 0.24 },
+  'NOW': { eps: 14.0, bps: 42.0, div: 0.00, grow: 18, debt: 25, beta: 1.05, gpa: 0.34 },
+  'GE': { eps: 4.5, bps: 28.0, div: 1.12, grow: 12, debt: 80, beta: 1.15, gpa: 0.16 },
+  'CAT': { eps: 21.0, bps: 45.0, div: 5.64, grow: 7, debt: 180, beta: 1.08, gpa: 0.22 },
+  'GS': { eps: 42.0, bps: 360.0, div: 12.00, grow: 8, debt: 160, beta: 1.25, gpa: 0.04 },
+  'MS': { eps: 8.8, bps: 58.0, div: 3.40, grow: 7, debt: 145, beta: 1.18, gpa: 0.04 },
+  'AXP': { eps: 14.0, bps: 38.0, div: 3.20, grow: 10, debt: 150, beta: 1.20, gpa: 0.12 },
+  'TMO': { eps: 22.0, bps: 132.0, div: 1.56, grow: 8, debt: 70, beta: 0.78, gpa: 0.20 },
+  'ABT': { eps: 4.8, bps: 22.0, div: 2.20, grow: 7, debt: 55, beta: 0.70, gpa: 0.24 },
+  'DHR': { eps: 8.5, bps: 58.0, div: 1.08, grow: 7, debt: 45, beta: 0.82, gpa: 0.22 },
+  'ACN': { eps: 12.8, bps: 42.0, div: 5.20, grow: 8, debt: 20, beta: 1.05, gpa: 0.36 },
+  'LIN': { eps: 15.0, bps: 78.0, div: 5.60, grow: 8, debt: 45, beta: 0.85, gpa: 0.21 },
+  'ISRG': { eps: 7.0, bps: 35.0, div: 0.00, grow: 15, debt: 5, beta: 1.15, gpa: 0.28 },
+  'AMAT': { eps: 8.8, bps: 19.0, div: 1.60, grow: 12, debt: 35, beta: 1.45, gpa: 0.40 },
+  'MU': { eps: 7.5, bps: 64.0, div: 0.46, grow: 20, debt: 25, beta: 1.55, gpa: 0.18 },
+  'LRCX': { eps: 34.0, bps: 72.0, div: 8.00, grow: 10, debt: 60, beta: 1.35, gpa: 0.42 },
+  'PANW': { eps: 6.2, bps: 15.0, div: 0.00, grow: 18, debt: 70, beta: 1.15, gpa: 0.30 },
+  'UBER': { eps: 2.2, bps: 11.0, div: 0.00, grow: 22, debt: 45, beta: 1.35, gpa: 0.18 },
+  'SHOP': { eps: 1.5, bps: 8.5, div: 0.00, grow: 20, debt: 10, beta: 1.45, gpa: 0.22 },
+  'PM': { eps: 7.0, bps: -8.0, div: 5.40, grow: 6, debt: 260, beta: 0.65, gpa: 0.38 },
+  'T': { eps: 2.3, bps: 18.0, div: 1.11, grow: 2, debt: 155, beta: 0.60, gpa: 0.12 },
+  'VZ': { eps: 4.5, bps: 26.0, div: 2.66, grow: 2, debt: 165, beta: 0.45, gpa: 0.13 },
+  'CMCSA': { eps: 4.3, bps: 22.0, div: 1.24, grow: 4, debt: 115, beta: 0.95, gpa: 0.18 },
+  'NEE': { eps: 3.4, bps: 24.0, div: 2.06, grow: 6, debt: 160, beta: 0.55, gpa: 0.08 },
+  'RTX': { eps: 5.9, bps: 46.0, div: 2.52, grow: 7, debt: 70, beta: 0.85, gpa: 0.16 },
+  'LOW': { eps: 12.8, bps: -4.0, div: 4.60, grow: 5, debt: 320, beta: 1.05, gpa: 0.30 },
+  'HON': { eps: 10.2, bps: 28.0, div: 4.60, grow: 6, debt: 85, beta: 0.95, gpa: 0.24 },
+  'SAP': { eps: 6.2, bps: 34.0, div: 2.50, grow: 12, debt: 35, beta: 0.95, gpa: 0.30 }
+};
+Object.keys(AM_QUANT_FUNDAMENTAL_DB_EXTENDED_).forEach(function(symbol) {
+  AM_QUANT_FUNDAMENTAL_DB_STATIC_[symbol] = AM_QUANT_FUNDAMENTAL_DB_EXTENDED_[symbol];
+});
+
 // 💡 퀀트 스크리닝용 국가별 타겟 유니버스 선언 (국내 60종 + 미국 40종 = 총 100종)
 var DOMESTIC_MARKET_UNIVERSE = [
   '005930', '000660', '005380', '000270', '068270', '373220', '207940', '105560', '055550', '035420',
@@ -173,6 +230,21 @@ var US_MARKET_UNIVERSE = [
   'AMD', 'NFLX', 'ADBE', 'CRM', 'CSCO', 'INTC', 'QCOM', 'TXN', 'ORCL', 'NKE',
   'KO', 'PEP', 'DIS', 'WMT', 'BAC', 'MRK', 'PFE', 'MCD', 'NVO', 'ASML'
 ];
+
+DOMESTIC_MARKET_UNIVERSE = DOMESTIC_MARKET_UNIVERSE.concat([
+  '006400', '066570', '051900', '138040', '316140', '024110', '086520', '247540', '402340', '267260',
+  '267250', '010120', '021240', '161390', '078930', '006800', '005940', '000150', '241560', '036460'
+]).filter(function(symbol, index, arr) {
+  return arr.indexOf(symbol) === index;
+});
+
+US_MARKET_UNIVERSE = US_MARKET_UNIVERSE.concat([
+  'TSM', 'BRK-B', 'PLTR', 'NOW', 'GE', 'CAT', 'GS', 'MS', 'AXP', 'TMO',
+  'ABT', 'DHR', 'ACN', 'LIN', 'ISRG', 'AMAT', 'MU', 'LRCX', 'PANW', 'UBER',
+  'SHOP', 'PM', 'T', 'VZ', 'CMCSA', 'NEE', 'RTX', 'LOW', 'HON', 'SAP'
+]).filter(function(symbol, index, arr) {
+  return arr.indexOf(symbol) === index;
+});
 
 /**
  * 야후 파이낸스 과거 월봉 차트 API를 통한 수정 종가(Adjusted Close) 수집
@@ -1147,6 +1219,18 @@ function updateQuantUniverseDatabase() {
       clearDataRows_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB);
       // 일괄 적재
       appendObjectRows_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB, results);
+      try {
+        var scoredForSupabase = getQuantStockScoring(totalUniverse, false);
+        var vaaForSupabase = null;
+        try {
+          vaaForSupabase = getVaaStrategySignal(false);
+        } catch(vaaSyncErr) {
+          logWarn_('quant_batch', 'Failed to compute VAA payload for Supabase sync', { error: vaaSyncErr.message });
+        }
+        syncQuantScoresToSupabase_(scoredForSupabase, today, vaaForSupabase);
+      } catch(syncErr) {
+        logWarn_('quant_batch', 'Failed to sync quant database to Supabase', { error: syncErr.message });
+      }
       logInfo_('quant_batch', 'Successfully updated quant universe database for today. validation pass.', { count: results.length });
     } catch(sheetErr) {
       logWarn_('quant_batch', 'Failed to write quant database results to sheet.', { error: sheetErr.message });
@@ -1154,6 +1238,82 @@ function updateQuantUniverseDatabase() {
   } else {
     logWarn_('quant_batch', 'No results computed for quant universe database.');
   }
+}
+
+function updateQuantUniverseDatabaseFast() {
+  ensureAllSheets_();
+  var today = amTodayString_();
+  var unionMap = {};
+  DOMESTIC_MARKET_UNIVERSE.forEach(function(s) { unionMap[s] = true; });
+  US_MARKET_UNIVERSE.forEach(function(s) { unionMap[s] = true; });
+
+  try {
+    var holdings = readObjects_(AM_CONFIG.SHEETS.HOLDINGS_CURRENT) || [];
+    holdings.forEach(function(h) {
+      var sym = normalizeStockSymbol_(h.symbol);
+      if (sym && sym !== 'CASH') {
+        unionMap[sym] = true;
+      }
+    });
+  } catch(hErr) {
+    logWarn_('quant_batch_fast', 'Failed to load holdings_current for dynamic universe expansion. Using base universe.', { error: hErr.message });
+  }
+
+  var totalUniverse = Object.keys(unionMap);
+  var scored = getQuantStockScoring(totalUniverse, false);
+  var nowText = amNowString_();
+  var results = (scored || []).map(function(s) {
+    return {
+      date: today,
+      symbol: s.symbol,
+      name: s.name,
+      price: s.price,
+      per: s.per,
+      pbr: s.pbr,
+      gpa: s.gpa,
+      momentum_pct: s.momentum_pct,
+      momentum_val: s.momentum_val,
+      rsi: s.rsi,
+      roe: s.roe,
+      debt: s.debt,
+      div_yield: s.div_yield,
+      beta: s.beta,
+      peg: s.peg,
+      srim_price: s.is_etf ? 'N/A' : s.srim_price,
+      safety_margin: s.is_etf ? 'N/A' : s.safety_margin,
+      updated_at: nowText
+    };
+  });
+
+  if (results.length === 0) {
+    throw new Error('퀀트 캐시 생성 결과가 비어 있습니다.');
+  }
+
+  clearDataRows_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB);
+  appendObjectRows_(AM_CONFIG.SHEETS.QUANT_UNIVERSE_DB, results);
+
+  try {
+    var vaaForSupabase = null;
+    try {
+      vaaForSupabase = getVaaStrategySignal(false);
+    } catch(vaaSyncErr) {
+      logWarn_('quant_batch_fast', 'Failed to compute VAA payload for Supabase sync', { error: vaaSyncErr.message });
+    }
+    syncQuantScoresToSupabase_(scored, today, vaaForSupabase);
+  } catch(syncErr) {
+    logWarn_('quant_batch_fast', 'Failed to sync fast quant database to Supabase', { error: syncErr.message });
+  }
+
+  logInfo_('quant_batch_fast', 'Successfully updated fast quant universe database.', {
+    count: results.length,
+    universe_count: totalUniverse.length
+  });
+  return {
+    success: true,
+    count: results.length,
+    universeCount: totalUniverse.length,
+    date: today
+  };
 }
 
 /**
@@ -1362,4 +1522,3 @@ function calculatePortfolioCorrelationMatrix_(holdings) {
   
   return correlationDetails.join('\n');
 }
-
