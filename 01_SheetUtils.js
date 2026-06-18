@@ -802,7 +802,7 @@ function syncPropertiesFromSheet() {
     { key: 'KIS_BASE_URL', desc: '한국투자증권 API 통신 주소' },
     { key: 'ADMIN_TOKEN', desc: '웹앱 대시보드 디버그/진단용 관리자 인증 토큰' },
     { key: 'SUPABASE_URL', desc: 'Supabase 프로젝트 URL' },
-    { key: 'SUPABASE_SECRET_KEY', desc: 'Supabase 서버 전용 sb_secret 또는 service_role 키 (브라우저 노출 금지)' },
+    { key: 'SUPABASE_SECRET_KEY', desc: 'Supabase legacy service_role JWT 키 (eyJ... 형식, 브라우저 노출 금지)' },
     { key: 'WEB_APP_URL', desc: '구글 앱스 스크립트 웹앱 배포 실행 URL (/exec)' },
     { key: 'PORTFOLIO_MODE', desc: '현재 포트폴리오 운용 모드 (REAL / MOCK / PAPER)' },
     { key: 'KIS_MOCK_SEED_MONEY', desc: '한국투자증권 모의투자 개설 시 설정한 초기 가상 예수금 원금 (기본 10000000)' }

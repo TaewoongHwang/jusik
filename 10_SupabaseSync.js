@@ -312,7 +312,7 @@ function supabaseNumberOrNull_(value) {
 
 function isSupabaseServerKey_(key) {
   var value = String(key || '').trim();
-  if (value.indexOf('sb_secret_') === 0) return true;
+  if (value.indexOf('sb_secret_') === 0) return false;
   if (value.indexOf('eyJ') !== 0) return false;
 
   try {
@@ -466,7 +466,7 @@ function menuForceSyncSupabasePortfolio() {
 function saveSupabaseSecretFromUi(secretKey) {
   var value = String(secretKey || '').trim();
   if (!isSupabaseServerKey_(value)) {
-    throw new Error('sb_secret_ 서버 키 또는 service_role 키만 저장할 수 있습니다.');
+    throw new Error('Supabase REST 동기화에는 service_role JWT 키만 사용할 수 있습니다. sb_secret_ 키는 PostgREST에서 401로 거부됩니다.');
   }
 
   var service = PropertiesService.getScriptProperties();
