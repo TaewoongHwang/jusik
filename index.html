@@ -438,6 +438,69 @@
       display: block;
     }
 
+    .asset-list-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: -4px 0 14px;
+      padding: 12px;
+      border-radius: 18px;
+      background: var(--glass-bg);
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-card);
+    }
+
+    .asset-toolbar-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .asset-toolbar-control {
+      width: 100%;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--text-primary);
+      font-size: 0.74rem;
+      font-weight: 700;
+      padding: 9px 10px;
+      outline: none;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    }
+
+    .asset-toolbar-control:focus {
+      border-color: rgba(0, 122, 255, 0.35);
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.10);
+    }
+
+    .asset-toolbar-search {
+      grid-column: span 2;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+
+    .asset-filter-reset {
+      border: 1px solid rgba(0, 122, 255, 0.18);
+      border-radius: 12px;
+      background: rgba(0, 122, 255, 0.08);
+      color: var(--accent-blue);
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 0 12px;
+      cursor: pointer;
+    }
+
+    .asset-list-summary {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      line-height: 1.35;
+    }
+
     @keyframes fadeIn {
       from {
         opacity: 0;
@@ -2104,6 +2167,32 @@
         <i class="fa-solid fa-wallet"></i> 보유 종목 리스트
       </div>
 
+      <div class="asset-list-toolbar">
+        <div class="asset-toolbar-row">
+          <select id="assetSortSelect" class="asset-toolbar-control" onchange="handleAssetListControlChange()">
+            <option value="value_desc">보유금액 큰 순</option>
+            <option value="weight_desc">비중 높은 순</option>
+            <option value="profit_desc">수익률 높은 순</option>
+            <option value="profit_asc">수익률 낮은 순</option>
+            <option value="day_desc">당일 상승률 순</option>
+            <option value="day_asc">당일 하락률 순</option>
+            <option value="name_asc">종목명 가나다순</option>
+          </select>
+          <select id="assetAccountFilter" class="asset-toolbar-control" onchange="handleAssetListControlChange()">
+            <option value="ALL">전체 계좌</option>
+          </select>
+        </div>
+        <div class="asset-toolbar-search">
+          <input id="assetSearchInput" class="asset-toolbar-control" type="search"
+            placeholder="종목명/코드/계좌 검색" oninput="handleAssetListControlChange()">
+          <button type="button" class="asset-filter-reset" onclick="resetAssetListControls()">초기화</button>
+        </div>
+        <div id="assetListSummary" class="asset-list-summary">
+          <span>전체 보유종목을 보유금액 순으로 표시합니다.</span>
+          <span></span>
+        </div>
+      </div>
+
       <div class="asset-list" id="assetList">
         <div class="empty-state">포트폴리오 자산을 불러오는 중입니다...</div>
       </div>
@@ -2607,6 +2696,9 @@
     let lastNewsData = null;       // 📰 탭 0초 전환을 위한 뉴스 데이터 캐시
     let currentCurrency = 'KRW';   // 💰 통화 표시 모드 (KRW / USD)
     let currentPaperSubTab = 'ALL'; // 🚀 모의투자 국내/해외 탭 필터
+    let assetListSortMode = 'value_desc';
+    let assetListAccountFilter = 'ALL';
+    let assetListSearchText = '';
     if (tg) {
       tg.ready();
       tg.expand();
@@ -2632,6 +2724,99 @@
       if (localPortfolioData) {
         onDataLoaded(localPortfolioData);
       }
+    }
+
+    function getAssetBrokerLabel_(asset) {
+      return String((asset && (asset.broker || asset.source)) || '기타 계좌').trim() || '기타 계좌';
+    }
+
+    function getAssetEvalKrw_(asset) {
+      return Number(asset && asset.qty || 0) * Number(asset && asset.currentPriceKrw || 0);
+    }
+
+    function getAssetProfitPct_(asset) {
+      if (!asset) return 0;
+      if (asset.profitLossPct !== undefined && asset.profitLossPct !== null && asset.profitLossPct !== '') {
+        return Number(asset.profitLossPct || 0);
+      }
+      const buy = Number(asset.priceKrw || asset.price || 0);
+      const cur = Number(asset.currentPriceKrw || asset.currentPrice || 0);
+      return buy > 0 ? ((cur - buy) / buy * 100) : 0;
+    }
+
+    function syncAssetListControlsFromDom_() {
+      const sortEl = document.getElementById('assetSortSelect');
+      const accountEl = document.getElementById('assetAccountFilter');
+      const searchEl = document.getElementById('assetSearchInput');
+      if (sortEl) assetListSortMode = sortEl.value || 'value_desc';
+      if (accountEl) assetListAccountFilter = accountEl.value || 'ALL';
+      if (searchEl) assetListSearchText = String(searchEl.value || '').trim().toLowerCase();
+    }
+
+    function populateAssetAccountFilter_(assets) {
+      const accountEl = document.getElementById('assetAccountFilter');
+      if (!accountEl) return;
+      const previous = assetListAccountFilter || accountEl.value || 'ALL';
+      const accounts = Array.from(new Set((assets || []).map(getAssetBrokerLabel_).filter(Boolean))).sort();
+      accountEl.innerHTML = '<option value="ALL">전체 계좌</option>' + accounts.map(account => {
+        return '<option value="' + escapeHtml(account) + '">' + escapeHtml(account) + '</option>';
+      }).join('');
+      assetListAccountFilter = (previous !== 'ALL' && accounts.indexOf(previous) < 0) ? 'ALL' : previous;
+      accountEl.value = assetListAccountFilter;
+    }
+
+    function applyAssetListControls_(assets) {
+      syncAssetListControlsFromDom_();
+      const query = assetListSearchText;
+      const account = assetListAccountFilter;
+      const filtered = (assets || []).filter(asset => {
+        const broker = getAssetBrokerLabel_(asset);
+        if (account !== 'ALL' && broker !== account) return false;
+        if (!query) return true;
+        const text = [asset.name, asset.symbol, broker].map(v => String(v || '').toLowerCase()).join(' ');
+        return text.indexOf(query) >= 0;
+      });
+
+      return filtered.sort((a, b) => {
+        if (assetListSortMode === 'weight_desc') return Number(b.portfolio_weight_pct || 0) - Number(a.portfolio_weight_pct || 0);
+        if (assetListSortMode === 'profit_desc') return getAssetProfitPct_(b) - getAssetProfitPct_(a);
+        if (assetListSortMode === 'profit_asc') return getAssetProfitPct_(a) - getAssetProfitPct_(b);
+        if (assetListSortMode === 'day_desc') return Number(b.changePct || 0) - Number(a.changePct || 0);
+        if (assetListSortMode === 'day_asc') return Number(a.changePct || 0) - Number(b.changePct || 0);
+        if (assetListSortMode === 'name_asc') return String(a.name || a.symbol || '').localeCompare(String(b.name || b.symbol || ''), 'ko');
+        return getAssetEvalKrw_(b) - getAssetEvalKrw_(a);
+      });
+    }
+
+    function updateAssetListSummary_(visibleAssets, baseAssets) {
+      const el = document.getElementById('assetListSummary');
+      if (!el) return;
+      const visible = visibleAssets || [];
+      const base = baseAssets || [];
+      const visibleValue = visible.reduce((sum, asset) => sum + getAssetEvalKrw_(asset), 0);
+      const baseValue = base.reduce((sum, asset) => sum + getAssetEvalKrw_(asset), 0);
+      const pct = baseValue > 0 ? (visibleValue / baseValue * 100) : 0;
+      const label = assetListAccountFilter === 'ALL' ? '전체 계좌' : assetListAccountFilter;
+      el.innerHTML = '<span>' + escapeHtml(label) + ' · ' + visible.length + '/' + base.length + '개 표시</span>' +
+        '<span>표시 금액 ' + Math.round(visibleValue).toLocaleString('ko-KR') + '원 · ' + pct.toFixed(1) + '%</span>';
+    }
+
+    function handleAssetListControlChange() {
+      syncAssetListControlsFromDom_();
+      if (localPortfolioData) onDataLoaded(localPortfolioData);
+    }
+
+    function resetAssetListControls() {
+      assetListSortMode = 'value_desc';
+      assetListAccountFilter = 'ALL';
+      assetListSearchText = '';
+      const sortEl = document.getElementById('assetSortSelect');
+      const accountEl = document.getElementById('assetAccountFilter');
+      const searchEl = document.getElementById('assetSearchInput');
+      if (sortEl) sortEl.value = assetListSortMode;
+      if (accountEl) accountEl.value = assetListAccountFilter;
+      if (searchEl) searchEl.value = '';
+      if (localPortfolioData) onDataLoaded(localPortfolioData);
     }
 
     // Load Data on Startup
@@ -3863,13 +4048,16 @@
       // 5. Render Asset Cards
       const listContainer = document.getElementById("assetList");
       listContainer.innerHTML = "";
+      populateAssetAccountFilter_(filteredAssets);
+      const visibleAssets = applyAssetListControls_(filteredAssets);
+      updateAssetListSummary_(visibleAssets, filteredAssets);
 
-      if (filteredAssets.length === 0) {
+      if (visibleAssets.length === 0) {
         listContainer.innerHTML = '<div class="empty-state">현재 감지된 보유 자산이 존재하지 않습니다.</div>';
         return;
       }
 
-      filteredAssets.forEach(asset => {
+      visibleAssets.forEach(asset => {
         const cardWrapper = document.createElement("div");
         cardWrapper.className = "asset-card-wrapper";
 
