@@ -102,10 +102,13 @@ function syncPortfolioToSupabase_(payload) {
 
   if (holdingsPayload.length > 0) {
     try {
-      var insertUrl = supabaseUrl + '/rest/v1/holdings';
+      var insertUrl = supabaseUrl + '/rest/v1/holdings?on_conflict=source,symbol';
+      var insertHeaders = Object.assign({}, headers, {
+        'Prefer': 'resolution=merge-dup'
+      });
       var insertOptions = {
         method: 'post',
-        headers: headers,
+        headers: insertHeaders,
         payload: JSON.stringify(holdingsPayload),
         muteHttpExceptions: true
       };
@@ -145,7 +148,7 @@ function syncPortfolioToSupabase_(payload) {
   });
 
   try {
-    var settingsUrl = supabaseUrl + '/rest/v1/settings';
+    var settingsUrl = supabaseUrl + '/rest/v1/settings?on_conflict=key';
     
     // PostgREST에서 Upsert(ON CONFLICT DO UPDATE)를 수행하기 위해 Prefer 헤더를 삽입합니다.
     var settingsHeaders = Object.assign({}, headers, {

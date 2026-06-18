@@ -78,6 +78,29 @@ alter table public.settings add column if not exists updated_at timestamptz defa
 
 do $$
 begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.holdings'::regclass
+      and conname = 'holdings_pkey'
+      and contype = 'p'
+  ) then
+    alter table public.holdings drop constraint holdings_pkey;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.holdings'::regclass
+      and conname = 'holdings_source_symbol_unique'
+  ) then
+    alter table public.holdings add constraint holdings_source_symbol_unique unique (source, symbol);
+  end if;
+end
+$$;
+
+do $$
+begin
   if not exists (
     select 1
     from pg_constraint
