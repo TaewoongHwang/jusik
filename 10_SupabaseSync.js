@@ -17,12 +17,12 @@ function syncPortfolioToSupabase_(payload) {
   
   if (!supabaseUrl || !supabaseKey) {
     logWarn_('supabase_sync', 'SUPABASE_URL or SUPABASE_SECRET_KEY properties are not set. Skipping Supabase sync.');
-    return;
+    return { ok: false, error: 'SUPABASE_URL or SUPABASE_SECRET_KEY properties are not set.' };
   }
 
   if (!isSupabaseServerKey_(supabaseKey)) {
     logWarn_('supabase_sync', 'Supabase sync blocked because SUPABASE_SECRET_KEY is not a server-only secret/service_role key.');
-    return;
+    return { ok: false, error: 'SUPABASE_SECRET_KEY is not a server-only secret/service_role key.' };
   }
   
   // URL 끝 슬래시 제거 처리
@@ -34,6 +34,14 @@ function syncPortfolioToSupabase_(payload) {
     'apikey': supabaseKey,
     'Authorization': 'Bearer ' + supabaseKey,
     'Content-Type': 'application/json'
+  };
+  var syncResult = {
+    ok: true,
+    holdingsPayloadCount: 0,
+    holdingsInsertCode: null,
+    holdingsInsertError: '',
+    settingsUpsertCode: null,
+    settingsUpsertError: ''
   };
 
   // 1단계: 기존 holdings 테이블 데이터 전체 비우기 (오래된 고립 데이터 방지)
@@ -90,6 +98,7 @@ function syncPortfolioToSupabase_(payload) {
       });
     });
   }
+  syncResult.holdingsPayloadCount = holdingsPayload.length;
 
   if (holdingsPayload.length > 0) {
     try {
@@ -105,9 +114,14 @@ function syncPortfolioToSupabase_(payload) {
       if (code >= 200 && code < 300) {
         logInfo_('supabase_sync', 'Successfully synced holdings to Supabase (' + holdingsPayload.length + ' assets)');
       } else {
-        logWarn_('supabase_sync', 'Failed to insert holdings', { code: code, body: insertResponse.getContentText() });
+        syncResult.ok = false;
+        syncResult.holdingsInsertError = insertResponse.getContentText();
+        logWarn_('supabase_sync', 'Failed to insert holdings', { code: code, body: syncResult.holdingsInsertError });
       }
+      syncResult.holdingsInsertCode = code;
     } catch(insErr) {
+      syncResult.ok = false;
+      syncResult.holdingsInsertError = insErr.message;
       logWarn_('supabase_sync', 'Error inserting holdings to Supabase', { error: insErr.message });
     }
   }
@@ -150,11 +164,18 @@ function syncPortfolioToSupabase_(payload) {
     if (sCode >= 200 && sCode < 300) {
       logInfo_('supabase_sync', 'Successfully synced settings metrics to Supabase');
     } else {
-      logWarn_('supabase_sync', 'Failed to upsert settings metrics', { code: sCode, body: settingsResponse.getContentText() });
+      syncResult.ok = false;
+      syncResult.settingsUpsertError = settingsResponse.getContentText();
+      logWarn_('supabase_sync', 'Failed to upsert settings metrics', { code: sCode, body: syncResult.settingsUpsertError });
     }
+    syncResult.settingsUpsertCode = sCode;
   } catch(setErr) {
+    syncResult.ok = false;
+    syncResult.settingsUpsertError = setErr.message;
     logWarn_('supabase_sync', 'Error syncing settings metrics to Supabase', { error: setErr.message });
   }
+
+  return syncResult;
 }
 
 function syncQuantScoresToSupabase_(scores, dateText, vaaPayload) {
@@ -403,9 +424,11 @@ function probeSupabaseTableCounts_() {
 
 function forceSyncSupabasePortfolioCache_() {
   var payload = getPortfolioDataForWeb(false);
+  var syncResult = syncPortfolioToSupabase_(payload);
   var counts = probeSupabaseTableCounts_();
   return {
     ok: true,
+    syncResult: syncResult,
     payloadAssets: payload && payload.assets ? payload.assets.length : 0,
     totalAsset: payload ? payload.totalAsset : 0,
     currentMode: payload ? payload.currentMode : '',
@@ -423,8 +446,14 @@ function menuForceSyncSupabasePortfolio() {
         'payload assets: ' + result.payloadAssets,
         'mode: ' + result.currentMode,
         'totalAsset: ' + result.totalAsset,
+        'sync ok: ' + (result.syncResult && result.syncResult.ok),
+        'holdings payload: ' + (result.syncResult ? result.syncResult.holdingsPayloadCount : 'N/A'),
+        'holdings insert HTTP: ' + (result.syncResult ? result.syncResult.holdingsInsertCode : 'N/A'),
+        'settings upsert HTTP: ' + (result.syncResult ? result.syncResult.settingsUpsertCode : 'N/A'),
         'holdings rows: ' + (result.counts.holdings.count === null ? JSON.stringify(result.counts.holdings) : result.counts.holdings.count),
-        'settings rows: ' + (result.counts.settings.count === null ? JSON.stringify(result.counts.settings) : result.counts.settings.count)
+        'settings rows: ' + (result.counts.settings.count === null ? JSON.stringify(result.counts.settings) : result.counts.settings.count),
+        'holdings error: ' + ((result.syncResult && result.syncResult.holdingsInsertError) || '-'),
+        'settings error: ' + ((result.syncResult && result.syncResult.settingsUpsertError) || '-')
       ].join('\n'),
       ui.ButtonSet.OK
     );

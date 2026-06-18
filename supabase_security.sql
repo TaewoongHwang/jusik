@@ -111,35 +111,44 @@ grant select on table public.holdings to authenticated;
 grant select on table public.settings to authenticated;
 grant select on table public.quant_scores to authenticated;
 
+create or replace function public.is_jusik_owner()
+returns boolean
+language sql
+security definer
+set search_path = public, auth
+as $$
+  select
+    coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'owner'
+    or lower(coalesce(auth.jwt() ->> 'email', '')) = 'tang4319@gmail.com'
+    or lower(coalesce(auth.jwt() -> 'user_metadata' ->> 'email', '')) = 'tang4319@gmail.com'
+    or exists (
+      select 1
+      from auth.users u
+      where u.id = auth.uid()
+        and lower(u.email) = 'tang4319@gmail.com'
+    );
+$$;
+
+revoke all on function public.is_jusik_owner() from public;
+grant execute on function public.is_jusik_owner() to authenticated;
+
 create policy owner_read_holdings
 on public.holdings
 for select
 to authenticated
-using (
-  (select auth.jwt() -> 'app_metadata' ->> 'role') = 'owner'
-  or lower(coalesce((select auth.jwt() ->> 'email'), '')) = 'tang4319@gmail.com'
-  or lower(coalesce((select auth.jwt() -> 'user_metadata' ->> 'email'), '')) = 'tang4319@gmail.com'
-);
+using (public.is_jusik_owner());
 
 create policy owner_read_settings
 on public.settings
 for select
 to authenticated
-using (
-  (select auth.jwt() -> 'app_metadata' ->> 'role') = 'owner'
-  or lower(coalesce((select auth.jwt() ->> 'email'), '')) = 'tang4319@gmail.com'
-  or lower(coalesce((select auth.jwt() -> 'user_metadata' ->> 'email'), '')) = 'tang4319@gmail.com'
-);
+using (public.is_jusik_owner());
 
 create policy owner_read_quant_scores
 on public.quant_scores
 for select
 to authenticated
-using (
-  (select auth.jwt() -> 'app_metadata' ->> 'role') = 'owner'
-  or lower(coalesce((select auth.jwt() ->> 'email'), '')) = 'tang4319@gmail.com'
-  or lower(coalesce((select auth.jwt() -> 'user_metadata' ->> 'email'), '')) = 'tang4319@gmail.com'
-);
+using (public.is_jusik_owner());
 
 update auth.users
 set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"owner"}'::jsonb
@@ -188,4 +197,8 @@ union all
 select 'owner role users' as label, count(*)::text as value
 from auth.users
 where lower(email) = 'tang4319@gmail.com'
-  and raw_app_meta_data ->> 'role' = 'owner';
+  and raw_app_meta_data ->> 'role' = 'owner'
+union all
+select 'owner auth users' as label, count(*)::text as value
+from auth.users
+where lower(email) = 'tang4319@gmail.com';
