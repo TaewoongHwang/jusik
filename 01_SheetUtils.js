@@ -476,6 +476,7 @@ function onOpen() {
   menu.addItem('🔐 Supabase 서버 키 안전 설정', 'menuConfigureSupabaseSecret');
   menu.addItem('🛡️ Supabase 보안 상태 진단', 'menuDiagnoseSupabaseSecurity');
   menu.addItem('🔄 Supabase 포트폴리오 캐시 강제 동기화', 'menuForceSyncSupabasePortfolio');
+  menu.addItem('🔄 Supabase 대시보드 보조 캐시 동기화', 'menuSyncSupabaseDashboardExtras');
   menu.addItem('🔎 KIS 보유자산 API 진단', 'menuDiagnoseKisHoldings');
   menu.addSeparator();
   menu.addItem('🧹 레거시 방대 시트 일괄 대청소', 'menuCleanupLegacySheets');

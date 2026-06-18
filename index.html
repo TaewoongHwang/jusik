@@ -2953,7 +2953,7 @@
       vaaBadge.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 연산 중...';
       factorList.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: var(--text-secondary);"><i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 8px; color: var(--accent-purple);"></i><div>실시간 팩터 점수 계산 중...</div></div>';
 
-      if (window.supabaseClient && !isForce) {
+      if (window.supabaseClient && (!isForce || !canUseAppsScriptRuntime_())) {
         fetchQuantLabDataFromSupabase()
           .then(function (res) {
             if (res && res.success) {
@@ -2962,7 +2962,7 @@
               onQuantDataLoaded(res);
               return;
             }
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
+            if (canUseAppsScriptRuntime_()) {
               fetchQuantLabDataFromAppsScript_(isForce, refreshIcon, vaaBadge, factorList);
             } else {
               if (refreshIcon) refreshIcon.classList.remove('fa-spin');
@@ -2971,7 +2971,7 @@
           })
           .catch(function (err) {
             console.warn('[Supabase] quant_scores 로드 실패, Apps Script로 폴백합니다.', err);
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
+            if (canUseAppsScriptRuntime_()) {
               fetchQuantLabDataFromAppsScript_(isForce, refreshIcon, vaaBadge, factorList);
             } else {
               if (refreshIcon) refreshIcon.classList.remove('fa-spin');
@@ -2981,7 +2981,7 @@
         return;
       }
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(function (res) {
             if (refreshIcon) refreshIcon.classList.remove('fa-spin');
@@ -3436,6 +3436,35 @@
         google.script.run;
     }
 
+    async function fetchSupabaseSettingJson_(key) {
+      if (!window.supabaseClient) {
+        throw new Error('Supabase client is not initialized.');
+      }
+      const res = await window.supabaseClient
+        .from('settings')
+        .select('value,updated_at')
+        .eq('key', key)
+        .maybeSingle();
+
+      if (res.error) throw res.error;
+      if (!res.data || res.data.value === null || res.data.value === undefined || res.data.value === '') {
+        return null;
+      }
+
+      try {
+        return JSON.parse(res.data.value);
+      } catch(e) {
+        return res.data.value;
+      }
+    }
+
+    function showSupabaseCacheMiss_(container, message) {
+      if (container) {
+        container.innerHTML = '<div class="empty-state">' + escapeHtml(message) + '</div>';
+      }
+      appendDiagnostic(message);
+    }
+
     function handlePortfolioSupabaseMiss_(message) {
       appendDiagnostic(message);
       if (canUseAppsScriptRuntime_()) {
@@ -3598,7 +3627,7 @@
     function fetchPortfolioDataFromAppsScript(isForce) {
       showHUD('loading', isForce ? '실시간 동기화 중' : '데이터 로딩 중', isForce ? '한투 API 실시간 잔고를 강제 스캔하고 있습니다...' : '서버와 안전하게 통신하고 있습니다...');
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(onDataLoaded)
           .withFailureHandler(onDataLoadFailed)
@@ -4073,7 +4102,7 @@
       }
       showHUD('loading', '투자 모드 변경 중', `${mode === 'REAL' ? '실제 계좌' : '모의 투자'} 모드로 전환하고 있습니다...`);
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(() => {
             showHUD('success', '변경 완료', '운용 투자 모드가 성공적으로 변경되었습니다!');
@@ -4126,7 +4155,7 @@
       showHUD('loading', '수동 자산 저장 중', `${broker} 내 ${symbol} 자산을 스프레드시트에 기입하고 있습니다...`);
       closeAddModal(); // 🚀 추가 버튼 누르는 즉시 팝업 모달을 슥 닫아 최고의 응답 쾌감 제공!
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(() => {
             showHUD('success', '자산 저장 완료', '수동 자산 설정 정보가 동기화되었습니다!');
@@ -4150,7 +4179,22 @@
       const container = document.getElementById("ledgerList");
       container.innerHTML = '<div class="empty-state">모의 매매 체결 내역을 불러오는 중입니다...</div>';
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (window.supabaseClient && !canUseAppsScriptRuntime_()) {
+        fetchSupabaseSettingJson_('paper_ledger_payload')
+          .then(function (trades) {
+            if (!Array.isArray(trades)) {
+              showSupabaseCacheMiss_(container, 'Supabase 가상매매 캐시가 비어 있습니다. Google Sheets의 AI Scanner 메뉴에서 Supabase 대시보드 보조 캐시 동기화를 실행해 주세요.');
+              return;
+            }
+            onLedgerLoaded(trades);
+          })
+          .catch(function (err) {
+            showSupabaseCacheMiss_(container, 'Supabase 가상매매 캐시 조회 실패: ' + (err.message || String(err)));
+          });
+        return;
+      }
+
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(onLedgerLoaded)
           .withFailureHandler(onDataLoadFailed)
@@ -4398,7 +4442,7 @@
       `;
       modal.classList.add("active");
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(function (result) {
             // 💡 [정제 필터] cleanAiResponse_로 백틱/마크다운/HTML 엔티티 통합 정제
@@ -4450,7 +4494,7 @@
       showHUD('loading', '수동 자산 수정 중', `${broker} 내 ${symbol} 자산을 변경하고 있습니다...`);
       closeEditModal();
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(() => {
             showHUD('success', '자산 수정 완료', '수동 자산 변경사항이 성공적으로 반영되었습니다!');
@@ -4508,7 +4552,7 @@
       showHUD('loading', '수동 자산 청산 중', `${broker} 내 ${symbol} 자산을 청산 처리하고 있습니다...`);
       closeEditModal();
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(() => {
             showHUD('success', '청산 완료', '자산이 전량 매도 청산(비활성화) 처리되었습니다!');
@@ -4575,6 +4619,25 @@
       const refreshIcon = document.getElementById("newsRefreshIcon");
       const isForce = forceRefresh === true;
 
+      if (window.supabaseClient && !canUseAppsScriptRuntime_()) {
+        if (isForce && refreshIcon) refreshIcon.classList.add("fa-spin");
+        fetchSupabaseSettingJson_('dashboard_news_payload')
+          .then(function (newsItems) {
+            if (refreshIcon) refreshIcon.classList.remove("fa-spin");
+            if (!Array.isArray(newsItems)) {
+              showSupabaseCacheMiss_(container, 'Supabase 뉴스 캐시가 비어 있습니다. Google Sheets의 AI Scanner 메뉴에서 Supabase 대시보드 보조 캐시 동기화를 실행해 주세요.');
+              return;
+            }
+            lastNewsData = newsItems;
+            onNewsLoaded(newsItems);
+          })
+          .catch(function (err) {
+            if (refreshIcon) refreshIcon.classList.remove("fa-spin");
+            showSupabaseCacheMiss_(container, 'Supabase 뉴스 캐시 조회 실패: ' + (err.message || String(err)));
+          });
+        return;
+      }
+
       if (isForce && refreshIcon) {
         refreshIcon.classList.add("fa-spin");
       }
@@ -4589,7 +4652,7 @@
         container.innerHTML = '<div class="empty-state">실시간 금융 뉴스를 정밀 파싱하고 있습니다...</div>';
       }
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler(function (newsItems) {
             if (refreshIcon) refreshIcon.classList.remove("fa-spin");
@@ -4780,6 +4843,67 @@
       `;
 
       container.innerHTML = svgHtml;
+    }
+
+    function buildClientPortfolioSummaryAdvice_() {
+      const data = localPortfolioData || {};
+      const assets = Array.isArray(data.assets) ? data.assets : [];
+      const stocks = assets
+        .filter(a => a && a.symbol && a.symbol !== 'CASH')
+        .sort((a, b) => Number(b.portfolio_weight_pct || 0) - Number(a.portfolio_weight_pct || 0))
+        .slice(0, 8);
+      const topAssets = stocks.map((a, idx) => {
+        return `${idx + 1}. ${escapeHtml(a.name || a.symbol)} (${escapeHtml(a.symbol)}) - 비중 ${Number(a.portfolio_weight_pct || 0).toFixed(2)}%, 수익률 ${Number(a.profitLossPct || 0).toFixed(2)}%`;
+      }).join('<br>');
+      const quantRows = lastQuantData && Array.isArray(lastQuantData.scoring) ? lastQuantData.scoring.slice(0, 5) : [];
+      const quantText = quantRows.length
+        ? quantRows.map((s, idx) => `${idx + 1}. ${escapeHtml(s.name || s.symbol)} (${escapeHtml(s.symbol)}) - 퀀트 ${Number(s.quant_score || 0).toFixed(1)}점`).join('<br>')
+        : '퀀트 캐시는 아직 화면에 로딩되지 않았습니다.';
+
+      return {
+        success: true,
+        summaryOnly: true,
+        advice: [
+          '<b>[요약] 현재 포트폴리오</b>',
+          '총 평가자산: <b>' + Math.round(Number(data.totalAsset || 0)).toLocaleString('ko-KR') + '원</b>',
+          '총 평가손익: <b>' + Math.round(Number(data.totalProfitLoss || 0)).toLocaleString('ko-KR') + '원</b> (' + Number(data.percentChange || 0).toFixed(2) + '%)',
+          '현금: <b>' + Math.round(Number(data.totalCash || 0)).toLocaleString('ko-KR') + '원</b>',
+          '',
+          '<b>[상위 보유자산]</b>',
+          topAssets || '보유 주식이 아직 로딩되지 않았습니다.',
+          '',
+          '<b>[퀀트 캐시 상위 후보]</b>',
+          quantText,
+          '',
+          '<b>[안내]</b>',
+          '이 요약은 Gemini API를 호출하지 않고 현재 화면과 Supabase 캐시만 사용합니다. 새 AI 리밸런싱 문장은 Google Sheets/비공개 Apps Script에서 생성한 뒤 Supabase 캐시로 동기화해 주세요.'
+        ].join('<br>')
+      };
+    }
+
+    function renderAiAdvicePanel_(panel, res) {
+      if (!res || !res.advice) {
+        panel.innerHTML = '<div class="empty-state" style="color: var(--negative-blue);">저장된 AI 조언 캐시가 없습니다. Google Sheets에서 AI 조언을 생성한 뒤 Supabase 대시보드 보조 캐시 동기화를 실행해 주세요.</div>';
+        return;
+      }
+      const safeHtml = cleanAiResponse_(res.advice);
+      const cacheNotice = res.throttled
+        ? `<div style="margin-bottom: 10px; padding: 9px 10px; border-radius: 10px; background: rgba(0,122,255,0.08); border: 1px solid rgba(0,122,255,0.16); color: var(--accent-blue); font-size: 0.72rem; font-weight: 700;">API 과호출 방지를 위해 ${res.cooldownMinutes || 60}분 쿨다운 중입니다. 저장된 AI 조언을 표시합니다.</div>`
+        : '';
+      panel.innerHTML = `
+        <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 14px; box-shadow: var(--shadow-card);">
+          <div style="font-size: 0.85rem; font-weight: 800; color: var(--accent-purple); display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
+            <i class="fa-solid fa-square-poll-vertical"></i> AI 리밸런싱 조언
+          </div>
+          ${cacheNotice}
+          <div style="color: var(--text-primary); line-height: 1.65; font-size: 0.8rem; word-break: keep-all;">
+            ${safeHtml}
+          </div>
+          <div style="margin-top: 12px; font-size: 0.65rem; color: var(--text-secondary); text-align: right; border-top: 1px dashed var(--border-color); padding-top: 8px;">
+            ${res.generatedAt ? '생성 시각: ' + escapeHtml(res.generatedAt) + ' | ' : ''}${res.summaryOnly ? 'API 미사용 요약' : '저장된 AI 캐시'}
+          </div>
+        </div>
+      `;
     }
 
     // ==================================================
@@ -5236,7 +5360,26 @@
         </div>
       `;
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (window.supabaseClient && !canUseAppsScriptRuntime_()) {
+        if (mode === true) {
+          panel.innerHTML = '<div class="empty-state" style="color: var(--accent-blue);">새 Gemini AI 조언 생성은 보안상 Google Sheets/비공개 Apps Script에서만 실행합니다. 생성 후 AI Scanner 메뉴의 Supabase 대시보드 보조 캐시 동기화를 실행하면 모바일 앱에서 바로 볼 수 있습니다.</div>';
+          return;
+        }
+        if (mode === 'summary_only') {
+          renderAiAdvicePanel_(panel, buildClientPortfolioSummaryAdvice_());
+          return;
+        }
+        fetchSupabaseSettingJson_('ai_advice_payload')
+          .then(function (res) {
+            renderAiAdvicePanel_(panel, res);
+          })
+          .catch(function (err) {
+            panel.innerHTML = '<div class="empty-state" style="color: var(--negative-blue);">Supabase AI 조언 캐시 조회 실패: ' + escapeHtml(err.message || String(err)) + '</div>';
+          });
+        return;
+      }
+
+      if (canUseAppsScriptRuntime_()) {
         google.script.run
           .withSuccessHandler((res) => {
             if (res && res.advice) {

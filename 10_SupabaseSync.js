@@ -329,6 +329,135 @@ function isSupabaseServerKey_(key) {
   }
 }
 
+function getSupabaseRestContext_() {
+  var service = PropertiesService.getScriptProperties();
+  var supabaseUrl = String(service.getProperty('SUPABASE_URL') || '').replace(/\/+$/, '');
+  var supabaseKey = String(service.getProperty('SUPABASE_SECRET_KEY') || '').trim();
+
+  if (!supabaseUrl) throw new Error('SUPABASE_URL is not configured.');
+  if (!isSupabaseServerKey_(supabaseKey)) {
+    throw new Error('SUPABASE_SECRET_KEY must be a legacy service_role JWT for server-side REST sync.');
+  }
+
+  return {
+    url: supabaseUrl,
+    headers: {
+      apikey: supabaseKey,
+      Authorization: 'Bearer ' + supabaseKey,
+      'Content-Type': 'application/json'
+    }
+  };
+}
+
+function upsertSupabaseSettings_(settingsPayload) {
+  var rows = (settingsPayload || []).filter(function(row) {
+    return row && row.key;
+  });
+  if (rows.length === 0) {
+    return { ok: true, code: null, rows: 0, error: '' };
+  }
+
+  var ctx = getSupabaseRestContext_();
+  var headers = Object.assign({}, ctx.headers, {
+    Prefer: 'resolution=merge-duplicates'
+  });
+  var response = UrlFetchApp.fetch(ctx.url + '/rest/v1/settings?on_conflict=key', {
+    method: 'post',
+    headers: headers,
+    payload: JSON.stringify(rows),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  var ok = code >= 200 && code < 300;
+  return {
+    ok: ok,
+    code: code,
+    rows: rows.length,
+    error: ok ? '' : response.getContentText()
+  };
+}
+
+function syncDashboardExtrasToSupabase_() {
+  var nowIso = new Date().toISOString();
+  var result = {
+    ok: true,
+    settings: null,
+    newsCount: 0,
+    ledgerCount: 0,
+    aiAdviceCached: false,
+    errors: []
+  };
+  var rows = [];
+
+  function pushJsonSetting_(key, value, description) {
+    rows.push({
+      key: key,
+      value: JSON.stringify(value === undefined ? null : value),
+      description: description,
+      updated_at: nowIso
+    });
+  }
+
+  try {
+    var news = getStockNewsForWeb(false) || [];
+    result.newsCount = news.length;
+    pushJsonSetting_('dashboard_news_payload', news, 'Latest financial news payload for GitHub Pages dashboard');
+    rows.push({
+      key: 'dashboard_news_updated_at',
+      value: nowIso,
+      description: 'Latest financial news cache timestamp',
+      updated_at: nowIso
+    });
+  } catch(newsErr) {
+    result.ok = false;
+    result.errors.push('news: ' + (newsErr.message || String(newsErr)));
+  }
+
+  try {
+    var ledger = getPaperLedgerDataForWeb() || [];
+    result.ledgerCount = ledger.length;
+    pushJsonSetting_('paper_ledger_payload', ledger, 'Latest paper trading ledger payload for GitHub Pages dashboard');
+    rows.push({
+      key: 'paper_ledger_updated_at',
+      value: nowIso,
+      description: 'Latest paper trading ledger cache timestamp',
+      updated_at: nowIso
+    });
+  } catch(ledgerErr) {
+    result.ok = false;
+    result.errors.push('ledger: ' + (ledgerErr.message || String(ledgerErr)));
+  }
+
+  try {
+    var aiAdvice = getAiPortfolioAdviceCachedOnly_();
+    result.aiAdviceCached = !!(aiAdvice && aiAdvice.success && aiAdvice.advice);
+    pushJsonSetting_('ai_advice_payload', aiAdvice, 'Latest cached AI portfolio advice payload for GitHub Pages dashboard');
+    rows.push({
+      key: 'ai_advice_updated_at',
+      value: nowIso,
+      description: 'Latest AI portfolio advice cache timestamp',
+      updated_at: nowIso
+    });
+  } catch(aiErr) {
+    result.ok = false;
+    result.errors.push('ai: ' + (aiErr.message || String(aiErr)));
+  }
+
+  try {
+    result.settings = upsertSupabaseSettings_(rows);
+    if (!result.settings.ok) {
+      result.ok = false;
+      result.errors.push('settings: ' + result.settings.error);
+    }
+  } catch(setErr) {
+    result.ok = false;
+    result.settings = { ok: false, code: null, rows: rows.length, error: setErr.message || String(setErr) };
+    result.errors.push('settings: ' + result.settings.error);
+  }
+
+  return result;
+}
+
 function getSupabaseSecurityStatus_() {
   var service = PropertiesService.getScriptProperties();
   var publicKey = service.getProperty('SUPABASE_KEY') || '';
@@ -428,10 +557,12 @@ function probeSupabaseTableCounts_() {
 function forceSyncSupabasePortfolioCache_() {
   var payload = getPortfolioDataForWeb(false);
   var syncResult = syncPortfolioToSupabase_(payload);
+  var extrasResult = syncDashboardExtrasToSupabase_();
   var counts = probeSupabaseTableCounts_();
   return {
     ok: true,
     syncResult: syncResult,
+    extrasResult: extrasResult,
     payloadAssets: payload && payload.assets ? payload.assets.length : 0,
     totalAsset: payload ? payload.totalAsset : 0,
     currentMode: payload ? payload.currentMode : '',
@@ -453,15 +584,44 @@ function menuForceSyncSupabasePortfolio() {
         'holdings payload: ' + (result.syncResult ? result.syncResult.holdingsPayloadCount : 'N/A'),
         'holdings insert HTTP: ' + (result.syncResult ? result.syncResult.holdingsInsertCode : 'N/A'),
         'settings upsert HTTP: ' + (result.syncResult ? result.syncResult.settingsUpsertCode : 'N/A'),
+        'extras sync ok: ' + (result.extrasResult && result.extrasResult.ok),
+        'news rows: ' + (result.extrasResult ? result.extrasResult.newsCount : 'N/A'),
+        'ledger rows: ' + (result.extrasResult ? result.extrasResult.ledgerCount : 'N/A'),
+        'AI cache: ' + (result.extrasResult && result.extrasResult.aiAdviceCached ? 'cached' : 'empty'),
+        'extras settings HTTP: ' + (result.extrasResult && result.extrasResult.settings ? result.extrasResult.settings.code : 'N/A'),
         'holdings rows: ' + (result.counts.holdings.count === null ? JSON.stringify(result.counts.holdings) : result.counts.holdings.count),
         'settings rows: ' + (result.counts.settings.count === null ? JSON.stringify(result.counts.settings) : result.counts.settings.count),
         'holdings error: ' + ((result.syncResult && result.syncResult.holdingsInsertError) || '-'),
-        'settings error: ' + ((result.syncResult && result.syncResult.settingsUpsertError) || '-')
+        'settings error: ' + ((result.syncResult && result.syncResult.settingsUpsertError) || '-'),
+        'extras error: ' + ((result.extrasResult && result.extrasResult.errors && result.extrasResult.errors.join(' | ')) || '-')
       ].join('\n'),
       ui.ButtonSet.OK
     );
   } catch (err) {
     ui.alert('Supabase 포트폴리오 캐시 동기화 실패', err.message || String(err), ui.ButtonSet.OK);
+    throw err;
+  }
+}
+
+function menuSyncSupabaseDashboardExtras() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var result = syncDashboardExtrasToSupabase_();
+    ui.alert(
+      'Supabase dashboard extras sync complete',
+      [
+        'sync ok: ' + result.ok,
+        'news rows: ' + result.newsCount,
+        'ledger rows: ' + result.ledgerCount,
+        'AI cache: ' + (result.aiAdviceCached ? 'cached' : 'empty'),
+        'settings HTTP: ' + (result.settings ? result.settings.code : 'N/A'),
+        'settings rows: ' + (result.settings ? result.settings.rows : 'N/A'),
+        'errors: ' + ((result.errors && result.errors.join(' | ')) || '-')
+      ].join('\n'),
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('Supabase dashboard extras sync failed', err.message || String(err), ui.ButtonSet.OK);
     throw err;
   }
 }
