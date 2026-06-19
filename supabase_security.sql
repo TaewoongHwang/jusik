@@ -122,17 +122,21 @@ alter table public.quant_scores enable row level security;
 drop policy if exists owner_read_holdings on public.holdings;
 drop policy if exists owner_read_settings on public.settings;
 drop policy if exists owner_read_quant_scores on public.quant_scores;
+drop policy if exists owner_write_holdings on public.holdings;
+drop policy if exists owner_write_settings on public.settings;
 
 revoke all on table public.holdings from anon;
 revoke all on table public.settings from anon;
 revoke all on table public.quant_scores from anon;
-revoke insert, update, delete, truncate, references, trigger on table public.holdings from authenticated;
-revoke insert, update, delete, truncate, references, trigger on table public.settings from authenticated;
+revoke truncate, references, trigger on table public.holdings from authenticated;
+revoke truncate, references, trigger on table public.settings from authenticated;
 revoke insert, update, delete, truncate, references, trigger on table public.quant_scores from authenticated;
 
 grant select on table public.holdings to authenticated;
 grant select on table public.settings to authenticated;
 grant select on table public.quant_scores to authenticated;
+grant insert, update, delete on table public.holdings to authenticated;
+grant insert, update on table public.settings to authenticated;
 
 create or replace function public.is_jusik_owner()
 returns boolean
@@ -172,6 +176,20 @@ on public.quant_scores
 for select
 to authenticated
 using (public.is_jusik_owner());
+
+create policy owner_write_holdings
+on public.holdings
+for all
+to authenticated
+using (public.is_jusik_owner())
+with check (public.is_jusik_owner());
+
+create policy owner_write_settings
+on public.settings
+for all
+to authenticated
+using (public.is_jusik_owner())
+with check (public.is_jusik_owner());
 
 update auth.users
 set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"owner"}'::jsonb

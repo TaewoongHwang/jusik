@@ -44,10 +44,13 @@ function syncPortfolioToSupabase_(payload) {
     settingsUpsertError: ''
   };
 
-  // 1단계: 기존 holdings 테이블 데이터 전체 비우기 (오래된 고립 데이터 방지)
-  // PostgREST 보안 정책 상 안전 삭제를 위해 'symbol=not.is.null' 필터를 적용합니다.
+  // 1단계: 서버가 소유한 KIS/모의투자 행만 비우기.
+  // Supabase를 1차 저장소로 쓰는 수동 입력 행은 클라이언트 owner 세션이 직접 관리합니다.
   try {
-    var deleteUrl = supabaseUrl + '/rest/v1/holdings?symbol=not.is.null';
+    var managedSources = ['KIS계좌', 'KIS해외', '모의투자', '현금', 'paper_trading', 'paper_trading_dom', 'paper_trading_us'];
+    var deleteUrl = supabaseUrl + '/rest/v1/holdings?source=in.(' + managedSources.map(function(source) {
+      return encodeURIComponent(source);
+    }).join(',') + ')';
     var deleteOptions = {
       method: 'delete',
       headers: headers,
@@ -55,10 +58,10 @@ function syncPortfolioToSupabase_(payload) {
     };
     var deleteResponse = UrlFetchApp.fetch(deleteUrl, deleteOptions);
     if (deleteResponse.getResponseCode() >= 300) {
-      logWarn_('supabase_sync', 'Failed to clear holdings table', { code: deleteResponse.getResponseCode(), body: deleteResponse.getContentText() });
+      logWarn_('supabase_sync', 'Failed to clear server-managed holdings rows', { code: deleteResponse.getResponseCode(), body: deleteResponse.getContentText() });
     }
   } catch(delErr) {
-    logWarn_('supabase_sync', 'Error clearing holdings table', { error: delErr.message });
+    logWarn_('supabase_sync', 'Error clearing server-managed holdings rows', { error: delErr.message });
   }
 
   // 2단계: 신규 holdings 데이터 벌크 삽입 (Bulk Insert)
@@ -97,6 +100,23 @@ function syncPortfolioToSupabase_(payload) {
         updated_at: todayIso
       });
     });
+  }
+
+  try {
+    var tombstones = getSupabaseJsonSettingByKey_(supabaseUrl, headers, 'manual_holding_tombstones') || [];
+    if (Array.isArray(tombstones) && tombstones.length > 0) {
+      var tombstoneMap = {};
+      tombstones.forEach(function(row) {
+        var source = String(row && row.source || '').trim();
+        var symbol = normalizeStockSymbol_(row && row.symbol);
+        if (source && symbol) tombstoneMap[source + '||' + symbol] = true;
+      });
+      holdingsPayload = holdingsPayload.filter(function(row) {
+        return !tombstoneMap[String(row.source || '').trim() + '||' + normalizeStockSymbol_(row.symbol)];
+      });
+    }
+  } catch(tombErr) {
+    logWarn_('supabase_sync', 'Failed to apply manual holding tombstones. Continuing with raw payload.', { error: tombErr.message });
   }
   syncResult.holdingsPayloadCount = holdingsPayload.length;
 
@@ -367,6 +387,30 @@ function getSupabaseRestContext_() {
       'Content-Type': 'application/json'
     }
   };
+}
+
+function getSupabaseJsonSettingByKey_(supabaseUrl, headers, key) {
+  var response = UrlFetchApp.fetch(
+    supabaseUrl + '/rest/v1/settings?key=eq.' + encodeURIComponent(key) + '&select=value&limit=1',
+    {
+      method: 'get',
+      headers: headers,
+      muteHttpExceptions: true
+    }
+  );
+  var code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error('Supabase settings read failed: HTTP ' + code + ' ' + response.getContentText());
+  }
+  var rows = JSON.parse(response.getContentText() || '[]');
+  if (!rows || rows.length === 0 || rows[0].value === undefined || rows[0].value === null || rows[0].value === '') {
+    return null;
+  }
+  try {
+    return JSON.parse(rows[0].value);
+  } catch(e) {
+    return rows[0].value;
+  }
 }
 
 function upsertSupabaseSettings_(settingsPayload) {

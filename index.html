@@ -3714,6 +3714,7 @@
       'portfolio_usd_rate',
       'portfolio_asset_histories'
     ];
+    const MANUAL_HOLDING_TOMBSTONES_KEY = 'manual_holding_tombstones';
 
     async function fetchSupabaseSettingJson_(key) {
       if (!window.supabaseClient) {
@@ -3735,6 +3736,196 @@
       } catch(e) {
         return res.data.value;
       }
+    }
+
+    function canUseSupabasePortfolioWrites_() {
+      return !!(window.supabaseClient && window.JUSIK_REQUIRES_SUPABASE_AUTH);
+    }
+
+    function normalizeWebSymbol_(symbol) {
+      let s = String(symbol || '').trim().toUpperCase();
+      if (s.indexOf("'") === 0) s = s.substring(1);
+      if (/^\d+$/.test(s) && s.length < 6) {
+        while (s.length < 6) s = '0' + s;
+      }
+      return s;
+    }
+
+    function findLocalAsset_(broker, symbol) {
+      const cleanSymbol = normalizeWebSymbol_(symbol);
+      const source = String(broker || '').trim();
+      const assets = localPortfolioData && Array.isArray(localPortfolioData.assets) ? localPortfolioData.assets : [];
+      return assets.find(a => String(a.broker || '').trim() === source && normalizeWebSymbol_(a.symbol) === cleanSymbol) || null;
+    }
+
+    function isManualAssetUsd_(broker, symbol) {
+      const source = String(broker || '').toLowerCase();
+      const cleanSymbol = normalizeWebSymbol_(symbol);
+      if (/^\d{6}$/.test(cleanSymbol)) return false;
+      if (source.indexOf('upbit') >= 0 || source.indexOf('coin') >= 0 || source.indexOf('코인') >= 0) return false;
+      return /^[A-Z][A-Z0-9.-]{0,9}$/.test(cleanSymbol);
+    }
+
+    function buildManualHoldingSupabaseRow_(broker, symbol, qty, price) {
+      const source = String(broker || '').trim();
+      const cleanSymbol = normalizeWebSymbol_(symbol);
+      const quantity = Number(qty || 0);
+      const inputPrice = Number(price || 0);
+      const usdRate = Number(localPortfolioData && localPortfolioData.usdRate) || 1350;
+      const existing = findLocalAsset_(source, cleanSymbol);
+      const isUsd = isManualAssetUsd_(source, cleanSymbol);
+
+      let avgPrice = inputPrice;
+      let avgPriceKrw = inputPrice;
+      if (isUsd) {
+        avgPrice = inputPrice > 5000 ? inputPrice / usdRate : inputPrice;
+        avgPriceKrw = inputPrice > 5000 ? inputPrice : inputPrice * usdRate;
+      }
+
+      let currentPrice = existing ? Number(existing.currentPrice || 0) : avgPrice;
+      let currentPriceKrw = existing ? Number(existing.currentPriceKrw || 0) : avgPriceKrw;
+      if (!Number.isFinite(currentPrice) || currentPrice <= 0) currentPrice = avgPrice;
+      if (!Number.isFinite(currentPriceKrw) || currentPriceKrw <= 0) currentPriceKrw = avgPriceKrw;
+
+      const purchaseAmount = quantity * avgPriceKrw;
+      const evalAmount = quantity * currentPriceKrw;
+      const profitLossAmount = evalAmount - purchaseAmount;
+      const profitLossPct = purchaseAmount > 0 ? (profitLossAmount / purchaseAmount * 100) : 0;
+
+      return {
+        symbol: cleanSymbol,
+        name: existing && existing.name ? existing.name : cleanSymbol,
+        quantity: quantity,
+        avg_price: isUsd ? Number(avgPrice.toFixed(4)) : avgPrice,
+        current_price: isUsd ? Number(currentPrice.toFixed(4)) : currentPrice,
+        purchase_amount: purchaseAmount,
+        eval_amount: evalAmount,
+        profit_loss_amount: profitLossAmount,
+        profit_loss_pct: profitLossPct,
+        portfolio_weight_pct: existing ? Number(existing.portfolio_weight_pct || 0) : 0,
+        source: source,
+        currency: isUsd ? 'USD' : 'KRW',
+        change_pct: existing ? Number(existing.changePct || 0) : 0,
+        updated_at: new Date().toISOString()
+      };
+    }
+
+    async function upsertManualHoldingToSupabase_(broker, symbol, qty, price) {
+      if (!canUseSupabasePortfolioWrites_()) throw new Error('Supabase write path is not available.');
+      const row = buildManualHoldingSupabaseRow_(broker, symbol, qty, price);
+      const res = await window.supabaseClient
+        .from('holdings')
+        .upsert(row, { onConflict: 'source,symbol' });
+      if (res.error) throw res.error;
+      return row;
+    }
+
+    async function deleteManualHoldingFromSupabase_(broker, symbol) {
+      if (!canUseSupabasePortfolioWrites_()) throw new Error('Supabase write path is not available.');
+      const source = String(broker || '').trim();
+      const cleanSymbol = normalizeWebSymbol_(symbol);
+      const attempts = [source, 'manual_' + source];
+      for (const src of attempts) {
+        const res = await window.supabaseClient
+          .from('holdings')
+          .delete()
+          .eq('source', src)
+          .eq('symbol', cleanSymbol);
+        if (res.error) throw res.error;
+      }
+    }
+
+    function sameManualHoldingKey_(row, broker, symbol) {
+      return String(row && row.source || '').trim() === String(broker || '').trim()
+        && normalizeWebSymbol_(row && row.symbol) === normalizeWebSymbol_(symbol);
+    }
+
+    async function getManualHoldingTombstones_() {
+      const value = await fetchSupabaseSettingJson_(MANUAL_HOLDING_TOMBSTONES_KEY);
+      return Array.isArray(value) ? value : [];
+    }
+
+    async function setManualHoldingTombstones_(rows) {
+      const nowIso = new Date().toISOString();
+      const res = await window.supabaseClient
+        .from('settings')
+        .upsert({
+          key: MANUAL_HOLDING_TOMBSTONES_KEY,
+          value: JSON.stringify(rows || []),
+          description: 'Client-side manual holding deletions that server-side sheet sync must not resurrect',
+          updated_at: nowIso
+        }, { onConflict: 'key' });
+      if (res.error) throw res.error;
+    }
+
+    async function addManualHoldingTombstone_(broker, symbol) {
+      const source = String(broker || '').trim();
+      const cleanSymbol = normalizeWebSymbol_(symbol);
+      const rows = (await getManualHoldingTombstones_()).filter(row => !sameManualHoldingKey_(row, source, cleanSymbol));
+      rows.push({ source: source, symbol: cleanSymbol, deleted_at: new Date().toISOString() });
+      await setManualHoldingTombstones_(rows);
+    }
+
+    async function removeManualHoldingTombstone_(broker, symbol) {
+      const source = String(broker || '').trim();
+      const cleanSymbol = normalizeWebSymbol_(symbol);
+      const rows = (await getManualHoldingTombstones_()).filter(row => !sameManualHoldingKey_(row, source, cleanSymbol));
+      await setManualHoldingTombstones_(rows);
+    }
+
+    function applyManualHoldingToLocal_(row) {
+      if (!localPortfolioData) {
+        localPortfolioData = { assets: [], usdRate: 1350, currentMode: 'REAL' };
+      }
+      if (!Array.isArray(localPortfolioData.assets)) localPortfolioData.assets = [];
+
+      const qty = Number(row.quantity || 0);
+      const isUsd = row.currency === 'USD';
+      const avgPrice = Number(row.avg_price || 0);
+      const currentPrice = Number(row.current_price || avgPrice || 0);
+      const priceKrw = qty > 0 ? Number(row.purchase_amount || 0) / qty : (isUsd ? avgPrice * Number(localPortfolioData.usdRate || 1350) : avgPrice);
+      const currentPriceKrw = qty > 0 ? Number(row.eval_amount || 0) / qty : (isUsd ? currentPrice * Number(localPortfolioData.usdRate || 1350) : currentPrice);
+      const asset = {
+        broker: row.source,
+        symbol: row.symbol,
+        name: row.name || row.symbol,
+        qty: qty,
+        price: avgPrice,
+        currentPrice: currentPrice,
+        priceKrw: priceKrw,
+        currentPriceKrw: currentPriceKrw,
+        isCoin: String(row.source || '').toLowerCase().indexOf('upbit') >= 0,
+        isUsd: isUsd,
+        changePct: Number(row.change_pct || 0),
+        profitLossPct: Number(row.profit_loss_pct || 0),
+        portfolio_weight_pct: Number(row.portfolio_weight_pct || 0),
+        profitLossAmount: Math.round(Number(row.profit_loss_amount || 0))
+      };
+      const idx = localPortfolioData.assets.findIndex(a => String(a.broker || '').trim() === String(row.source || '').trim() && normalizeWebSymbol_(a.symbol) === row.symbol);
+      if (idx >= 0) {
+        localPortfolioData.assets[idx] = Object.assign({}, localPortfolioData.assets[idx], asset);
+      } else {
+        localPortfolioData.assets.push(asset);
+      }
+    }
+
+    async function syncSupabasePortfolioSettingsFromLocal_() {
+      if (!canUseSupabasePortfolioWrites_() || !localPortfolioData) return;
+      const nowIso = new Date().toISOString();
+      const rows = [
+        { key: 'portfolio_total_asset', value: String(Math.round(Number(localPortfolioData.totalAsset || 0))), description: 'Total evaluated portfolio asset', updated_at: nowIso },
+        { key: 'portfolio_total_purchase', value: String(Math.round(Number(localPortfolioData.totalPurchase || 0))), description: 'Total purchase amount', updated_at: nowIso },
+        { key: 'portfolio_total_profit_loss', value: String(Math.round(Number(localPortfolioData.totalProfitLoss || 0))), description: 'Total unrealized P/L', updated_at: nowIso },
+        { key: 'portfolio_percent_change', value: String(Number(localPortfolioData.percentChange || 0)), description: 'Total return percentage', updated_at: nowIso },
+        { key: 'portfolio_total_cash', value: String(Math.round(Number(localPortfolioData.totalCash || 0))), description: 'Cash balance', updated_at: nowIso },
+        { key: 'portfolio_total_realized_pl', value: String(Math.round(Number(localPortfolioData.totalRealizedPl || 0))), description: 'Total realized P/L', updated_at: nowIso },
+        { key: 'portfolio_current_mode', value: String(localPortfolioData.currentMode || 'REAL'), description: 'Portfolio mode', updated_at: nowIso },
+        { key: 'portfolio_usd_rate', value: String(Number(localPortfolioData.usdRate || 1350)), description: 'USD/KRW exchange rate used for display conversion', updated_at: nowIso }
+      ];
+      const res = await window.supabaseClient
+        .from('settings')
+        .upsert(rows, { onConflict: 'key' });
+      if (res.error) throw res.error;
     }
 
     function showSupabaseCacheMiss_(container, message) {
@@ -4448,23 +4639,43 @@
     }
 
     // Submit Form (Add/Update Asset)
-    function submitHoldingForm(event) {
+    async function submitHoldingForm(event) {
       event.preventDefault();
 
       const broker = document.getElementById("formBroker").value;
       const symbol = document.getElementById("formSymbol").value.trim().toUpperCase();
       const qty = parseFloat(document.getElementById("formQty").value);
       const price = parseFloat(document.getElementById("formPrice").value);
-      const adminToken = getDashboardAdminToken();
 
-      if (!broker || !symbol || isNaN(qty) || isNaN(price) || !adminToken) {
+      if (!broker || !symbol || isNaN(qty) || isNaN(price)) {
         showHUD('error', '입력 오류', '모든 양식을 정확하게 채워 주십시오.');
         setTimeout(hideHUD, 2000);
         return;
       }
 
-      showHUD('loading', '수동 자산 저장 중', `${broker} 내 ${symbol} 자산을 스프레드시트에 기입하고 있습니다...`);
-      closeAddModal(); // 🚀 추가 버튼 누르는 즉시 팝업 모달을 슥 닫아 최고의 응답 쾌감 제공!
+      showHUD('loading', '수동 자산 저장 중', `${broker} 내 ${symbol} 자산을 Supabase DB에 저장하고 있습니다...`);
+      closeAddModal();
+
+      if (canUseSupabasePortfolioWrites_()) {
+        try {
+          const row = await upsertManualHoldingToSupabase_(broker, symbol, qty, price);
+          await removeManualHoldingTombstone_(broker, symbol);
+          applyManualHoldingToLocal_(row);
+          recalculateLocalPortfolioTotals();
+          await syncSupabasePortfolioSettingsFromLocal_();
+          showHUD('success', '자산 저장 완료', 'Supabase DB에 수동 자산이 즉시 반영되었습니다.');
+          document.getElementById("holdingForm").reset();
+          setTimeout(hideHUD, 1000);
+          return;
+        } catch(err) {
+          showHUD('error', 'Supabase 저장 실패', (err.message || String(err)) + '\n\nSupabase RLS owner 쓰기 정책이 적용되어 있는지 확인해 주세요.');
+          setTimeout(hideHUD, 3500);
+          return;
+        }
+      }
+
+      const adminToken = getDashboardAdminToken();
+      if (!adminToken) return;
 
       if (canUseAppsScriptRuntime_()) {
         google.script.run
@@ -4787,16 +4998,15 @@
       document.getElementById("aiAnalysisModal").classList.remove("active");
     }
 
-    function submitModalForm(event) {
+    async function submitModalForm(event) {
       event.preventDefault();
 
       const broker = document.getElementById("modalBroker").value;
       const symbol = document.getElementById("modalSymbol").value.trim().toUpperCase();
       const qty = parseFloat(document.getElementById("modalQty").value);
       const price = parseFloat(document.getElementById("modalPrice").value);
-      const adminToken = getDashboardAdminToken();
 
-      if (!broker || !symbol || isNaN(qty) || isNaN(price) || !adminToken) {
+      if (!broker || !symbol || isNaN(qty) || isNaN(price)) {
         showHUD('error', '입력 오류', '모든 양식을 정확하게 채워 주십시오.');
         setTimeout(hideHUD, 2000);
         return;
@@ -4804,6 +5014,26 @@
 
       showHUD('loading', '수동 자산 수정 중', `${broker} 내 ${symbol} 자산을 변경하고 있습니다...`);
       closeEditModal();
+
+      if (canUseSupabasePortfolioWrites_()) {
+        try {
+          const row = await upsertManualHoldingToSupabase_(broker, symbol, qty, price);
+          await removeManualHoldingTombstone_(broker, symbol);
+          applyManualHoldingToLocal_(row);
+          recalculateLocalPortfolioTotals();
+          await syncSupabasePortfolioSettingsFromLocal_();
+          showHUD('success', '자산 수정 완료', 'Supabase DB에 수동 자산 변경사항이 반영되었습니다.');
+          setTimeout(hideHUD, 1000);
+          return;
+        } catch(err) {
+          showHUD('error', 'Supabase 수정 실패', (err.message || String(err)) + '\n\nSupabase RLS owner 쓰기 정책이 적용되어 있는지 확인해 주세요.');
+          setTimeout(hideHUD, 3500);
+          return;
+        }
+      }
+
+      const adminToken = getDashboardAdminToken();
+      if (!adminToken) return;
 
       if (canUseAppsScriptRuntime_()) {
         google.script.run
@@ -4857,11 +5087,32 @@
       }
     }
 
-    function executeModalHoldingLiquidation(broker, symbol) {
-      const adminToken = getDashboardAdminToken();
-      if (!adminToken) return;
+    async function executeModalHoldingLiquidation(broker, symbol) {
       showHUD('loading', '수동 자산 청산 중', `${broker} 내 ${symbol} 자산을 청산 처리하고 있습니다...`);
       closeEditModal();
+
+      if (canUseSupabasePortfolioWrites_()) {
+        try {
+          await deleteManualHoldingFromSupabase_(broker, symbol);
+          await addManualHoldingTombstone_(broker, symbol);
+          if (localPortfolioData && localPortfolioData.assets) {
+            const cleanSymbol = normalizeWebSymbol_(symbol);
+            localPortfolioData.assets = localPortfolioData.assets.filter(a => !(String(a.broker || '').trim() === String(broker || '').trim() && normalizeWebSymbol_(a.symbol) === cleanSymbol));
+            recalculateLocalPortfolioTotals();
+            await syncSupabasePortfolioSettingsFromLocal_();
+          }
+          showHUD('success', '청산 완료', 'Supabase DB에서 수동 자산이 삭제되었습니다.');
+          setTimeout(hideHUD, 1000);
+          return;
+        } catch(err) {
+          showHUD('error', 'Supabase 청산 실패', (err.message || String(err)) + '\n\nSupabase RLS owner 쓰기 정책이 적용되어 있는지 확인해 주세요.');
+          setTimeout(hideHUD, 3500);
+          return;
+        }
+      }
+
+      const adminToken = getDashboardAdminToken();
+      if (!adminToken) return;
 
       if (canUseAppsScriptRuntime_()) {
         google.script.run
