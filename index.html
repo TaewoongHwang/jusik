@@ -1060,25 +1060,6 @@
       line-height: 1.45;
     }
 
-    /* 가상 매매 거래 뱃지 */
-    .badge-tx {
-      font-size: 0.62rem;
-      font-weight: 700;
-      padding: 1px 5px;
-      border-radius: 4px;
-      color: #ffffff;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .badge-tx.buy {
-      background: #3b82f6;
-    }
-
-    .badge-tx.sell {
-      background: #f43f5e;
-    }
-
     /* 자산 비주얼 게이지바 */
     .gauge-container {
       margin-top: 14px;
@@ -1921,8 +1902,7 @@
     }
 
     .mode-badge,
-    .news-source,
-    .badge-tx {
+    .news-source {
       box-shadow: none !important;
     }
 
@@ -2133,20 +2113,6 @@
 
     <!-- Tab 1: Portfolio View -->
     <div id="portfolioTab" class="tab-content active">
-      <!-- 🚀 [신설] 모의투자 전용 국내/해외 탭바 -->
-      <div id="paperSubTabs" class="quant-sub-tabs"
-        style="display: none; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;">
-        <span class="sub-tab-btn active" id="paperSubTabAll" onclick="switchPaperSubTab('ALL')"
-          style="font-size: 0.75rem; font-weight: bold; color: var(--text-secondary); cursor: pointer; padding: 6px 12px; border-radius: 8px;">전체
-          모의자산</span>
-        <span class="sub-tab-btn" id="paperSubTabDom" onclick="switchPaperSubTab('DOM')"
-          style="font-size: 0.75rem; font-weight: bold; color: var(--text-secondary); cursor: pointer; padding: 6px 12px; border-radius: 8px;">국내
-          퀀트모의 (300만)</span>
-        <span class="sub-tab-btn" id="paperSubTabUs" onclick="switchPaperSubTab('US')"
-          style="font-size: 0.75rem; font-weight: bold; color: var(--text-secondary); cursor: pointer; padding: 6px 12px; border-radius: 8px;">해외
-          퀀트모의 ($2,222)</span>
-      </div>
-
       <div class="section-title">
         <i class="fa-solid fa-wallet"></i> 보유 종목 리스트
       </div>
@@ -2455,6 +2421,28 @@
         .replace(/'/g, '&#039;');
     }
 
+    function escapeJsAttrArg(str) {
+      return encodeURIComponent(String(str || ''));
+    }
+
+    function decodeJsAttrArg(str) {
+      try {
+        return decodeURIComponent(String(str || ''));
+      } catch (e) {
+        return String(str || '');
+      }
+    }
+
+    function makeAssetDomKey_(broker, symbol) {
+      const raw = encodeURIComponent(String(broker || '') + '||' + String(symbol || ''));
+      let safe = 'asset';
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw.charAt(i);
+        safe += /[A-Za-z0-9_-]/.test(ch) ? ch : '_' + ch.charCodeAt(0).toString(16);
+      }
+      return safe;
+    }
+
     function sanitizeHtml(str) {
       if (!str) return '';
       let escaped = escapeHtml(str);
@@ -2562,7 +2550,6 @@
 
             // index.html에서 호출하는 Apps Script 백엔드 함수 매핑 목록
             getPortfolioDataForWeb: function (force) { this._callApi('getPortfolioDataForWeb', [force]); },
-            getPaperLedgerDataForWeb: function () { this._callApi('getPaperLedgerDataForWeb', []); },
             toggleInvestmentModeFromWeb: function (mode, adminToken) { this._callApi('toggleInvestmentModeFromWeb', [mode, adminToken]); },
             updateHoldingFromWeb: function (broker, symbol, qty, price, active, adminToken) { this._callApi('updateHoldingFromWeb', [broker, symbol, qty, price, active, adminToken]); },
             getStockNewsForWeb: function (force) { this._callApi('getStockNewsForWeb', [force]); },
@@ -2582,7 +2569,6 @@
     let lastQuantData = null;      // ⚙️ 3대 서브 탭 0초 전환을 위한 실시간 퀀트 데이터 캐시
     let lastNewsData = null;       // 📰 탭 0초 전환을 위한 뉴스 데이터 캐시
     let currentCurrency = 'KRW';   // 💰 통화 표시 모드 (KRW / USD)
-    let currentPaperSubTab = 'ALL'; // 🚀 모의투자 국내/해외 탭 필터
     let assetListSortMode = 'value_desc';
     let assetListAccountFilter = 'ALL';
     let assetListSearchText = '';
@@ -2596,18 +2582,6 @@
       currentCurrency = chk.checked ? 'USD' : 'KRW';
       const label = document.getElementById("currencyLabel");
       label.innerText = chk.checked ? '$ USD 기준' : '₩ KRW 기준';
-
-      if (localPortfolioData) {
-        onDataLoaded(localPortfolioData);
-      }
-    }
-
-    function switchPaperSubTab(tabName) {
-      currentPaperSubTab = tabName;
-      document.querySelectorAll('#paperSubTabs .sub-tab-btn').forEach(btn => btn.classList.remove('active'));
-      if (tabName === 'ALL') document.getElementById("paperSubTabAll").classList.add("active");
-      else if (tabName === 'DOM') document.getElementById("paperSubTabDom").classList.add("active");
-      else if (tabName === 'US') document.getElementById("paperSubTabUs").classList.add("active");
 
       if (localPortfolioData) {
         onDataLoaded(localPortfolioData);
@@ -4178,55 +4152,20 @@
 
       localPortfolioData = data; // 전역 메모리 캐시 백업
 
-      // 1. MOCK 모드일 때 국내/해외/전체 탭바 표시 처리 및 자산 필터링
       let filteredAssets = data.assets || [];
-      const paperSubTabs = document.getElementById("paperSubTabs");
 
-      if (data.currentMode === "MOCK") {
-        paperSubTabs.style.display = "flex";
-
-        // 필터링 적용
-        if (currentPaperSubTab === 'DOM') {
-          // 국내 가상자산 필터링
-          filteredAssets = (data.assets || []).filter(a => {
-            return (a.source === 'paper_trading_dom' || (a.source === 'paper_trading' && !a.isUsd));
-          });
-        } else if (currentPaperSubTab === 'US') {
-          // 해외 가상자산 필터링
-          filteredAssets = (data.assets || []).filter(a => {
-            return (a.source === 'paper_trading_us' || (a.source === 'paper_trading' && a.isUsd));
-          });
-        }
-      } else {
-        paperSubTabs.style.display = "none";
-      }
-
-      // 2. 모드 및 서브 탭에 따른 부분합 메트릭(요약금액) 실시간 재계산
       let totalPurchase = 0;
       let totalEval = 0;
       let totalCash = 0;
 
-      if (data.currentMode === "PAPER" && currentPaperSubTab !== 'ALL') {
-        filteredAssets.forEach(a => {
-          if (a.symbol === 'CASH') {
-            totalCash += a.currentPriceKrw * a.qty;
-          } else {
-            totalPurchase += a.priceKrw * a.qty;
-            totalEval += a.currentPriceKrw * a.qty;
-          }
-        });
-        totalEval += totalCash;
-        totalPurchase += totalCash;
-      } else {
-        totalPurchase = data.totalPurchase || 0;
-        totalEval = data.totalAsset || 0;
-        totalCash = data.totalCash || 0;
+      totalPurchase = data.totalPurchase || 0;
+      totalEval = data.totalAsset || 0;
+      totalCash = data.totalCash || 0;
 
-        if (totalCash === 0 && data.assets) {
-          const cashAsset = data.assets.find(a => a.symbol === 'CASH');
-          if (cashAsset) {
-            totalCash = Math.round(cashAsset.qty * cashAsset.currentPriceKrw);
-          }
+      if (totalCash === 0 && data.assets) {
+        const cashAsset = data.assets.find(a => a.symbol === 'CASH');
+        if (cashAsset) {
+          totalCash = Math.round(cashAsset.qty * cashAsset.currentPriceKrw);
         }
       }
 
@@ -4355,7 +4294,9 @@
         const cardWrapper = document.createElement("div");
         cardWrapper.className = "asset-card-wrapper";
 
-        const uniqueKey = asset.broker + "_" + asset.symbol;
+        const uniqueKey = makeAssetDomKey_(asset.broker, asset.symbol);
+        const brokerArg = escapeJsAttrArg(asset.broker);
+        const symbolArg = escapeJsAttrArg(asset.symbol);
 
         // AI 분석 버튼
         let aiButtonHtml = '';
@@ -4442,7 +4383,7 @@
 
         if (iconType === "manual") {
           cardWrapper.innerHTML = `
-            <div class="asset-card" onclick="toggleAssetDetail('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}')">
+            <div class="asset-card" onclick="toggleAssetDetail('${brokerArg}', '${symbolArg}')">
               <div class="asset-info">
                 <div class="asset-icon ${iconType}">${iconSymbol}</div>
                 <div class="asset-meta">
@@ -4459,7 +4400,7 @@
                 <span class="asset-price">${formattedVal}</span>
                 <span class="asset-qty">${qtyAndPriceText}</span>
               </div>
-              <button class="asset-edit-btn" onclick="event.stopPropagation(); openEditModal('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '${asset.qty || 0}', '${asset.price || 0}')" title="자산 편집">
+              <button class="asset-edit-btn" onclick="event.stopPropagation(); openEditModal(decodeJsAttrArg('${brokerArg}'), decodeJsAttrArg('${symbolArg}'), '${asset.qty || 0}', '${asset.price || 0}')" title="자산 편집">
                 <i class="fa-solid fa-pen-to-square"></i>
               </button>
             </div>
@@ -4484,9 +4425,9 @@
               
               <div class="detail-chart-sec">
                 <div class="chart-tab-header">
-                  <span class="chart-tab active" id="tab-7d-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${asset.broker}', '${asset.symbol}', '7D')">7일 추이</span>
-                  <span class="chart-tab" id="tab-1m-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${asset.broker}', '${asset.symbol}', '1M')">1개월 추이</span>
-                  <span class="chart-tab" id="tab-1y-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${asset.broker}', '${asset.symbol}', '1Y')">1년 추이</span>
+                  <span class="chart-tab active" id="tab-7d-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${brokerArg}', '${symbolArg}', '7D')">7일 추이</span>
+                  <span class="chart-tab" id="tab-1m-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${brokerArg}', '${symbolArg}', '1M')">1개월 추이</span>
+                  <span class="chart-tab" id="tab-1y-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${brokerArg}', '${symbolArg}', '1Y')">1년 추이</span>
                 </div>
                 
                 <div class="sparkline-wrapper">
@@ -4502,7 +4443,7 @@
           listContainer.appendChild(cardWrapper);
         } else {
           cardWrapper.innerHTML = `
-            <div class="asset-card" onclick="toggleAssetDetail('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}')">
+            <div class="asset-card" onclick="toggleAssetDetail('${brokerArg}', '${symbolArg}')">
               <div class="asset-info">
                 <div class="asset-icon ${iconType}">${iconSymbol}</div>
                 <div class="asset-meta">
@@ -4541,9 +4482,9 @@
               
               <div class="detail-chart-sec">
                 <div class="chart-tab-header">
-                  <span class="chart-tab active" id="tab-7d-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '7D')">7일 추이</span>
-                  <span class="chart-tab" id="tab-1m-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '1M')">1개월 추이</span>
-                  <span class="chart-tab" id="tab-1y-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${escapeHtml(asset.broker)}', '${escapeHtml(asset.symbol)}', '1Y')">1년 추이</span>
+                  <span class="chart-tab active" id="tab-7d-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${brokerArg}', '${symbolArg}', '7D')">7일 추이</span>
+                  <span class="chart-tab" id="tab-1m-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${brokerArg}', '${symbolArg}', '1M')">1개월 추이</span>
+                  <span class="chart-tab" id="tab-1y-${uniqueKey}" onclick="event.stopPropagation(); switchChartPeriod('${brokerArg}', '${symbolArg}', '1Y')">1년 추이</span>
                 </div>
                 
                 <div class="sparkline-wrapper">
@@ -4696,96 +4637,9 @@
       }
     }
 
-    // Fetch Paper Ledger Data
-    function fetchPaperLedgerData() {
-      const container = document.getElementById("ledgerList");
-      container.innerHTML = '<div class="empty-state">모의 매매 체결 내역을 불러오는 중입니다...</div>';
-
-      if (window.supabaseClient && !canUseAppsScriptRuntime_()) {
-        fetchSupabaseSettingJson_('paper_ledger_payload')
-          .then(function (trades) {
-            if (!Array.isArray(trades)) {
-              showSupabaseCacheMiss_(container, 'Supabase 가상매매 캐시가 비어 있습니다. Google Sheets의 AI Scanner 메뉴에서 Supabase 대시보드 보조 캐시 동기화를 실행해 주세요.');
-              return;
-            }
-            onLedgerLoaded(trades);
-          })
-          .catch(function (err) {
-            showSupabaseCacheMiss_(container, 'Supabase 가상매매 캐시 조회 실패: ' + (err.message || String(err)));
-          });
-        return;
-      }
-
-      if (canUseAppsScriptRuntime_()) {
-        google.script.run
-          .withSuccessHandler(onLedgerLoaded)
-          .withFailureHandler(onDataLoadFailed)
-          .getPaperLedgerDataForWeb();
-      } else {
-        // Fallback mockup for local preview
-        setTimeout(() => {
-          const mockup = [
-            { date: "2026-05-27", symbol: "0167A0", name: "SOL AI반도체TOP2플러스", actionType: "BUY", price: 22510, quantity: 10, amount: 225100, reason: "모의투자 체결 시뮬레이션", createdAt: "2026-05-27 15:45:00" },
-            { date: "2026-05-26", symbol: "102110", name: "TIGER 200", actionType: "BUY", price: 130560, quantity: 4, amount: 522240, reason: "1차 검토가 체결", createdAt: "2026-05-26 10:15:00" },
-            { date: "2026-05-25", symbol: "005930", name: "삼성전자", actionType: "SELL", price: 307000, quantity: 1, amount: 307000, reason: "시간 제한 청산 (5거래일 경과)", createdAt: "2026-05-25 15:30:00" }
-          ];
-          onLedgerLoaded(mockup);
-        }, 1200);
-      }
-    }
-
-    function onLedgerLoaded(trades) {
-      const container = document.getElementById("ledgerList");
-      container.innerHTML = "";
-
-      if (!trades || trades.length === 0) {
-        container.innerHTML = '<div class="empty-state">체결된 가상 거래 내역이 존재하지 않거나 현재 실제 계좌 모드입니다.</div>';
-        return;
-      }
-
-      trades.forEach(tx => {
-        const card = document.createElement("div");
-        card.className = "asset-card";
-
-        const isBuy = (tx.actionType === "BUY");
-        const badgeClass = isBuy ? "badge-tx buy" : "badge-tx sell";
-        const badgeText = isBuy ? "매수" : "매도";
-        const iconType = isBuy ? "stock" : "manual";
-        const iconSymbol = isBuy ? "📥" : "📤";
-
-        const formattedAmount = `₩${Math.round(tx.amount).toLocaleString('ko-KR')}`;
-        const formattedPrice = `₩${Math.round(tx.price).toLocaleString('ko-KR')}`;
-
-        card.innerHTML = `
-          <div class="asset-info" style="gap: 10px;">
-            <div class="asset-icon ${iconType}" style="font-size: 1.1rem; width: 34px; height: 34px; border-radius: 10px;">${iconSymbol}</div>
-            <div class="asset-meta" style="gap: 1px;">
-              <span class="asset-name" style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem;">
-                ${tx.name}
-                <span class="${badgeClass}">${badgeText}</span>
-              </span>
-              <span class="asset-symbol-label" style="font-size: 0.68rem;">
-                ${tx.symbol} · ${tx.quantity}주 체결
-              </span>
-              <span class="asset-qty" style="margin-top: 2px; font-size: 0.68rem; color: var(--text-secondary); line-height: 1.25;">
-                <b>사유:</b> ${tx.reason}
-              </span>
-            </div>
-          </div>
-          <div class="asset-value-sec" style="margin-left: 4px;">
-            <span class="asset-price" style="font-size: 0.85rem;">${formattedAmount}</span>
-            <span class="asset-qty" style="font-size: 0.68rem;">단가 ${formattedPrice}</span>
-            <span class="asset-qty" style="font-size: 0.62rem; color: var(--text-secondary);">${tx.date}</span>
-          </div>
-        `;
-        container.appendChild(card);
-      });
-    }
-
     // ==========================================
-    /* 💎 Premium Edit Modal Controller Functions */
+    /* Premium Edit Modal Controller Functions */
     // ==========================================
-    // 💡 [실시간 부분 거래 계산기 엔진]
     let currentCalcMode = 'BUY'; // 'BUY' or 'SELL'
 
     function setCalcMode(mode) {
@@ -5274,7 +5128,9 @@
 
     // 📈 [실시간 아코디언 토글 제어 엔진]
     function toggleAssetDetail(broker, symbol) {
-      const uniqueKey = broker + "_" + symbol;
+      broker = decodeJsAttrArg(broker);
+      symbol = decodeJsAttrArg(symbol);
+      const uniqueKey = makeAssetDomKey_(broker, symbol);
       const panel = document.getElementById(`detail-${uniqueKey}`);
       if (!panel) return;
 
@@ -5304,7 +5160,9 @@
 
     // 🔄 [차트 다중 기간(7D/1M/1Y) 스위칭 컨트롤러]
     function switchChartPeriod(broker, symbol, period) {
-      const uniqueKey = broker + "_" + symbol;
+      broker = decodeJsAttrArg(broker);
+      symbol = decodeJsAttrArg(symbol);
+      const uniqueKey = makeAssetDomKey_(broker, symbol);
       const periods = ['7D', '1M', '1Y'];
       periods.forEach(p => {
         const tabEl = document.getElementById(`tab-${p.toLowerCase()}-${uniqueKey}`);
@@ -5352,7 +5210,9 @@
     }
 
     function drawSparkline(broker, symbol, period) {
-      const uniqueKey = broker + "_" + symbol;
+      broker = decodeJsAttrArg(broker);
+      symbol = decodeJsAttrArg(symbol);
+      const uniqueKey = makeAssetDomKey_(broker, symbol);
       const container = document.getElementById(`sparkline-${uniqueKey}`);
       if (!container) return;
 
