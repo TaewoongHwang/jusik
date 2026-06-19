@@ -2699,6 +2699,7 @@
     let assetListSortMode = 'value_desc';
     let assetListAccountFilter = 'ALL';
     let assetListSearchText = '';
+    let activeAssetDetailKey = null;
     if (tg) {
       tg.ready();
       tg.expand();
@@ -3816,6 +3817,7 @@
 
     // Server-Client Communication using google.script.run
     var supabaseSubscription = null;
+    var supabasePortfolioRefreshTimer = null;
 
     function canUseAppsScriptRuntime_() {
       return location.hostname.includes('google') &&
@@ -3878,6 +3880,17 @@
       );
     }
 
+    function schedulePortfolioDataFromSupabase_(reason) {
+      if (supabasePortfolioRefreshTimer) {
+        clearTimeout(supabasePortfolioRefreshTimer);
+      }
+      supabasePortfolioRefreshTimer = setTimeout(function() {
+        supabasePortfolioRefreshTimer = null;
+        console.log('[Supabase] portfolio refresh:', reason || 'scheduled');
+        fetchPortfolioDataFromSupabase();
+      }, 400);
+    }
+
     // Server-Client Communication using google.script.run & Supabase (PostgreSQL)
     function fetchPortfolioData(forceRefresh) {
       const isForce = (forceRefresh === true);
@@ -3902,7 +3915,7 @@
               { event: '*', schema: 'public', table: 'holdings' },
               (payload) => {
                 console.log('🚀 [Supabase] holdings 테이블 변경 감지. 데이터를 갱신합니다.', payload);
-                fetchPortfolioDataFromSupabase();
+                schedulePortfolioDataFromSupabase_('holdings changed');
               }
             )
             .on(
@@ -3912,7 +3925,7 @@
                 const changedKey = payload && payload.new ? payload.new.key : '';
                 if (changedKey && !PORTFOLIO_SETTING_KEYS.includes(changedKey)) return;
                 console.log('🚀 [Supabase] settings 테이블 변경 감지. 데이터를 갱신합니다.', payload);
-                fetchPortfolioDataFromSupabase();
+                schedulePortfolioDataFromSupabase_('settings changed');
               }
             )
             .subscribe();
@@ -5142,13 +5155,22 @@
       if (isActive) {
         panel.classList.remove("active");
         panel.style.maxHeight = null;
+        if (activeAssetDetailKey === uniqueKey) activeAssetDetailKey = null;
       } else {
+        document.querySelectorAll('.asset-detail-panel.active').forEach(openPanel => {
+          if (openPanel !== panel) {
+            openPanel.classList.remove('active');
+            openPanel.style.maxHeight = null;
+          }
+        });
+        activeAssetDetailKey = uniqueKey;
         panel.classList.add("active");
-        // 차트와 탭을 그리는 연산 엔진을 먼저 돌려서 scrollHeight를 정확히 확보
-        switchChartPeriod(broker, symbol, '7D');
-        setTimeout(() => {
+        if (panel.dataset.renderedPeriod !== '7D') {
+          switchChartPeriod(broker, symbol, '7D');
+        }
+        requestAnimationFrame(() => {
           panel.style.maxHeight = panel.scrollHeight + "px";
-        }, 50);
+        });
       }
     }
 
@@ -5172,7 +5194,10 @@
       // 높이 변경 반영
       const panel = document.getElementById(`detail-${uniqueKey}`);
       if (panel && panel.classList.contains("active")) {
-        panel.style.maxHeight = panel.scrollHeight + "px";
+        panel.dataset.renderedPeriod = period;
+        requestAnimationFrame(() => {
+          panel.style.maxHeight = panel.scrollHeight + "px";
+        });
       }
     }
 
@@ -5212,6 +5237,21 @@
       const asset = localPortfolioData.assets.find(a => a.broker === broker && a.symbol === symbol);
       if (!asset) {
         container.innerHTML = '<div style="font-size: 0.72rem; color: var(--text-secondary); text-align: center; padding-top: 15px;">자산 정보를 찾을 수 없습니다.</div>';
+        return;
+      }
+
+      const renderCacheKey = [
+        broker,
+        symbol,
+        period,
+        currentCurrency,
+        asset.currentPriceKrw || asset.currentPrice || 0,
+        asset.changePct || 0,
+        (asset.history || []).length,
+        (asset.history1M || []).length,
+        (asset.history1Y || []).length
+      ].join('|');
+      if (container.dataset.sparklineCacheKey === renderCacheKey && container.innerHTML.trim()) {
         return;
       }
 
@@ -5260,7 +5300,9 @@
 
       const isPositive = asset.changePct !== undefined ? Number(asset.changePct) >= 0 : true;
       const strokeColor = isPositive ? '#f43f5e' : '#38bdf8';
-      const gradientId = `grad-${uniqueKey}-${period}`;
+      const svgSafeKey = String(uniqueKey).replace(/[^A-Za-z0-9_-]/g, '_');
+      const gradientId = `grad-${svgSafeKey}-${period}`;
+      const glowId = `glow-${svgSafeKey}-${period}`;
 
       const polylinePoints = points.map(pt => `${pt.x},${pt.y}`).join(' ');
       const polygonPoints = `${points[0].x},${height} ` + polylinePoints + ` ${points[points.length - 1].x},${height}`;
@@ -5273,7 +5315,7 @@
               <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.25" />
               <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.0" />
             </linearGradient>
-            <filter id="glow-${uniqueKey}" x="-20%" y="-20%" width="140%" height="140%">
+            <filter id="${glowId}" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="2" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
@@ -5282,13 +5324,14 @@
             </filter>
           </defs>
           <polygon points="${polygonPoints}" fill="url(#${gradientId})" />
-          <polyline points="${polylinePoints}" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow-${uniqueKey})" />
+          <polyline points="${polylinePoints}" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" filter="url(#${glowId})" />
           <circle cx="${lastPt.x}" cy="${lastPt.y}" r="6" fill="${strokeColor}" opacity="0.3" style="animation: pulse 2s infinite ease-in-out; transform-origin: ${lastPt.x}px ${lastPt.y}px;" />
           <circle cx="${lastPt.x}" cy="${lastPt.y}" r="3" fill="#ffffff" />
         </svg>
       `;
 
       container.innerHTML = svgHtml;
+      container.dataset.sparklineCacheKey = renderCacheKey;
     }
 
     function buildClientPortfolioSummaryAdvice_() {
