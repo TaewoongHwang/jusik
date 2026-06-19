@@ -908,18 +908,6 @@
       border-top: 1px solid rgba(255, 255, 255, 0.03);
     }
 
-    .command-code {
-      display: inline-block;
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 6px;
-      padding: 2px 6px;
-      font-family: monospace;
-      color: var(--text-primary);
-      font-size: 0.8rem;
-      margin: 4px 0;
-    }
-
     .command-btn {
       margin-top: 10px;
       background: rgba(255, 255, 255, 0.05);
@@ -1849,7 +1837,6 @@
     .asset-broker,
     .summary-change,
     .command-btn,
-    .command-code,
     .readonly-input,
     .modal-input,
     .supabase-auth-card input,
@@ -2141,9 +2128,6 @@
       </button>
       <button class="tab-btn" onclick="switchTab('quantTab', this); fetchQuantLabData();" style="font-size: 0.8rem;">
         <i class="fa-solid fa-gears"></i> 퀀트 연구소
-      </button>
-      <button class="tab-btn" onclick="switchTab('guideTab', this)" style="font-size: 0.8rem;">
-        <i class="fa-solid fa-book-open"></i> 설명서
       </button>
     </div>
 
@@ -2440,103 +2424,6 @@
           💡 종합점수는 가치 팩터(PER, PBR 순위)와 50일 모멘텀 이격도 순위를 합산해 100점 만점으로 가공한 팩터 종합 퀀트 점수입니다.
         </div>
       </div>
-    </div>
-
-    <!-- Tab 2: Command Guide View -->
-    <div id="guideTab" class="tab-content">
-
-      <div class="section-title">
-        <i class="fa-solid fa-list-check"></i> 텔레그램 명령어 가이드북
-      </div>
-
-      <div class="accordion-list">
-
-        <!-- Accordion Item 1 -->
-        <div class="accordion-item">
-          <div class="accordion-header" onclick="toggleAccordion(this)">
-            <span>📈 실시간 포트폴리오 조회</span>
-            <i class="fa-solid fa-chevron-down"></i>
-          </div>
-          <div class="accordion-content">
-            <div class="accordion-body">
-              연동된 KIS 계좌 정보와 수동으로 기록한 자산들을 통합하여 최신 주가 피드 기준 실시간 평가 현황을 받아봅니다.
-              <br><span class="command-code">/holdings</span>
-              <button class="command-btn" onclick="sendTelegramText('/holdings')">
-                <i class="fa-solid fa-paper-plane"></i> 텔레그램방에 명령어 입력
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Accordion Item 2 -->
-        <div class="accordion-item">
-          <div class="accordion-header" onclick="toggleAccordion(this)">
-            <span>🤖 실시간 그라운딩 AI 주식 비서</span>
-            <i class="fa-solid fa-chevron-down"></i>
-          </div>
-          <div class="accordion-content">
-            <div class="accordion-body">
-              오늘 수집된 시장 지표, 뉴스 강도, 주도주 랭킹 등의 정보를 기반으로 질문에 답하는 AI 비서를 장착합니다.
-              <br><span class="command-code">/ai [질문 내용]</span>
-              <br>예: <span class="command-code">/ai 삼성전자 기술적 매수세 어때?</span>
-              <button class="command-btn" onclick="sendTelegramText('/ai 오늘 수집된 데이터 기준으로 리스크 관리 전략 알려줘')">
-                <i class="fa-solid fa-paper-plane"></i> 예시 명령어 전송
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Accordion Item 3 -->
-        <div class="accordion-item">
-          <div class="accordion-header" onclick="toggleAccordion(this)">
-            <span>🔄 실제계좌 / 모의투자 모드 제어</span>
-            <i class="fa-solid fa-chevron-down"></i>
-          </div>
-          <div class="accordion-content">
-            <div class="accordion-body">
-              투자 모드를 스위칭하여 가상 모의투자 현황 혹은 실제 자산 현황을 개별 조회할 수 있게 돕습니다.
-              <br><span class="command-code">/mode</span>
-              <button class="command-btn" onclick="sendTelegramText('/mode')">
-                <i class="fa-solid fa-paper-plane"></i> 모드 토글 명령어 실행
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Accordion Item 4 -->
-        <div class="accordion-item">
-          <div class="accordion-header" onclick="toggleAccordion(this)">
-            <span>🔥 장마감 워크플로우 수동 긴급 구동</span>
-            <i class="fa-solid fa-chevron-down"></i>
-          </div>
-          <div class="accordion-content">
-            <div class="accordion-body">
-              자동화 대기 시간(17:10)까지 기다리지 않고, 장마감 이후의 시장 데이터 분석과 Gemini 리포트 생성을 즉시 수행시킵니다.
-              <br><span class="command-code">/run</span>
-              <button class="command-btn" onclick="sendTelegramText('/run')">
-                <i class="fa-solid fa-paper-plane"></i> 워크플로우 즉시 실행
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Accordion Item 5 -->
-        <div class="accordion-item">
-          <div class="accordion-header" onclick="toggleAccordion(this)">
-            <span>🛠️ 수동 자산 기록 (/set & /clear)</span>
-            <i class="fa-solid fa-chevron-down"></i>
-          </div>
-          <div class="accordion-content">
-            <div class="accordion-body">
-              수량/평단을 대화방 타이핑을 통해 직접 기록하거나 지울 수 있는 백업 명령어입니다.
-              <br><span class="command-code">/set [증권사] [종목코드] [수량] [평단]</span>
-              <br><span class="command-code">/clear [증권사] [종목코드]</span>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
     </div>
 
   </div>
@@ -3757,16 +3644,6 @@
       if (!isActive) {
         item.classList.add('active');
         content.style.maxHeight = content.scrollHeight + "px";
-      }
-    }
-
-    // Integration with Telegram WebApp SDK to send text to chat
-    function sendTelegramText(text) {
-      if (tg) {
-        tg.sendData(text);
-        tg.close();
-      } else {
-        alert("텔레그램 앱 내에서만 직접 구동되는 기능입니다:\n" + text);
       }
     }
 
